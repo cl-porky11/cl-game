@@ -25,10 +25,10 @@ defining classes:
   ;;mover doesnt inherit from positional that you can define other classes like positional, that implement this method
   
 initializing classes:
-  (make-instance 'test-ball :pos (vector 0 0 0) :vel (vector 0 0 0) :size 16 :color '(1 0 0))
+  <code>(make-instance 'test-ball :pos (vector 0 0 0) :vel (vector 0 0 0) :size 16 :color '(1 0 0))
   ;;a red colored ball at position (0|0|0) with speed (0|0|0) and radius 16
   ;;vectors may be also of other dimensions. rotation may only work 3dimensional
 
-starting game
-  (start :objects *list-of-testballs*)
+starting game:
+    (start :objects *list-of-test-balls*)
 
