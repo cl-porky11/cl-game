@@ -1,5 +1,5 @@
 (defpackage #:clg-vec
-  (:use #:cl)
+  (:use #:cl #:clg-util)
   (:export #:mapvs
            #:mapvec
            #:mapv
@@ -18,9 +18,16 @@
            #:divv
 
            #:absvec
+           #:unit-vec
            #:distance
            #:scalar
            #:angle
+           #:cross3
+
+           #:orthogonal-factor
+           #:orthogonal-vector
+           #:line-vector
+           #:line-distance
            ))
 
 (in-package #:clg-vec)
@@ -82,14 +89,29 @@
 (defun absvec (vector)
   (sqrt (reduce #'+ (mapvec (lambda (line) (expt line 2)) vector))))
 
+(defun unitvec (vector)
+  (v/ vector (absvec vector)))
+
 (defun distance (vectora vectord)
   (absvec (v- vectora vectord)))
 
 (defun scalar (vectora vectord)
   (reduce #'+ (map '(vector number) #'* vectora vectord)))
 
+(defun unit-scalar (veca vecd)
+  (/ (scalar veca vecd) (absvec veca) (absvec vecd)))
+
 (defun angle (veca vecd)
-  (mod (acos (/ (scalar veca vecd) (absvec veca) (absvec vecd))) pi))
+  (mod (acos (unit-scalar veca vecd)) pi))
+
+(defun cross3 (veca vecd)
+  (vector-bind (a1 a2 a3) veca
+    (vector-bind (d1 d2 d3) vecd
+      (vector
+       (- (* a2 d3) (* a3 d2))
+       (- (* a3 d1) (* a1 d3))
+       (- (* a1 d2) (* a2 d1))))))
+
 
 #+nil
 (defun test-angle (angle vector)
@@ -100,16 +122,16 @@
                     (* (aref vector 0) (sin angle))))))
                  
 
-(defun orthogonal-length (start line point)
-  (/ (scalar (v- point start) line) (scalar line line)))
+(defun orthogonal-factor (point line)
+  (/ (scalar point line) (scalar line line)))
 
-(defun orthogonal-projection (start line point)
-  (v+ start (v* line (orthogonal-length start line point))))
+(defun orthogonal-vector (point line)
+  (v* line (orthogonal-factor point line)))
 
-(defun line-vector (start line point)
-  (v- (orthogonal-projection start line point) point))
+(defun line-vector (point line)
+  (v- (orthogonal-vector point line) point))
 
-(defun line-distance (start line point)
-  (absvec (line-vector start line point)))
+(defun line-distance (point line)
+  (absvec (line-vector point line)))
 
 

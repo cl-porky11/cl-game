@@ -1,5 +1,5 @@
 (defpackage #:clg-win
-  (:use #:cl #:clg-spat)
+  (:use #:cl #:clg-spat #:clg-in)
   (:export #:window
            #:*width*
            #:*height*
@@ -30,6 +30,7 @@
   (gl:ortho 0 *width* *height* 0 -1 1))
 
 (defmethod glut:display ((w window))
+  (act-keys)
   (draw *draw-object*)
   (act *act-object*))
 
@@ -38,16 +39,21 @@
   (glut:swap-buffers))
 
 (defmethod glut:keyboard ((w window) key x y)
-  #+nil (f key))
+  (press-key key))
 
-#+nil
-(defmethod glut:mouse ((w window) button state x y)
-  (if (eq state :up)
-      (setn *volume* 0 1))
-  (glut:post-redisplay))
+(defmethod glut:keyboard-up ((w window) key x y)
+  (release-key key))
+
 
 
 (defun run (time)
   (loop
      (sleep time)
      (glut:post-redispay)))
+
+#+nil
+(defun package-generic-functions ()
+  (dolist (gf (remove-if-not (lambda (symbol) (and (fboundp symbol)
+                                                   (typep (symbol-function symbol) 'generic-function)))
+                             (apropos-list "" :glut t)))
+    (print gf)))
