@@ -3,11 +3,12 @@
   :license "LLGPL"
   :depends-on (#:alexandria #:cl-opengl #:cl-glut #:bordeaux-threads #:cl-quaternion)
   :components ((:file "util")
-               (:file "vectors")
+               (:file "vectors" :depends-on ("util"))
                (:file "opengl")
                (:file "spatial" :depends-on ("util" "vectors" "opengl"))
-               (:file "window" :depends-on ("spatial"))
-               (:file "game")))
+               (:file "input" :depends-on ("util"))
+               (:file "window" :depends-on ("spatial" "input"))
+               (:file "game" :depends-on ("spatial" "window"))))
 
 
 

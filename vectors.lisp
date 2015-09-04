@@ -18,7 +18,7 @@
            #:divv
 
            #:absvec
-           #:unit-vec
+           #:unitvec
            #:distance
            #:scalar
            #:angle

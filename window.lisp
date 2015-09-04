@@ -1,42 +1,46 @@
 (defpackage #:clg-win
-  (:use #:cl #:clg-spat #:clg-in)
+  (:use #:cl #:clg-spat #:clg-in #:bordeaux-threads)
   (:export #:window
-           #:*width*
-           #:*height*
-           #:*draw-object*
-           #:*act-object*
            #:run
            ))
 
-(defclass window (glut:window) ())
-
-(defvar *width*)
-(defvar *height*)
-
-(defvar *draw-object*)
-(defvar *act-object*)
-
-(defmethod glut:reshape ((w window) width height)
-    (setq *width* width)
-    (setq *height* height)
-    (gl:ortho 0 *width* *height* 0 -1 1))
+(in-package #:clg-win)
 
 
-(defmethod glut:display-window :before ((w window))
-  (gl:clear-color 1 1 1 0))
+(defclass window (glut:window)
+  ((act-object :initarg :act-object)
+   (draw-object :initarg :draw-object))
+  (:default-initargs :width 1280 :height 768 :resizable t :fps 32 :mode '(:depth)))
 
-(defmethod glut:display :before ((w window))
-  (gl:clear :color-buffer)
-  (gl:ortho 0 *width* *height* 0 -1 1))
+(defmethod initialize-instance :after ((win window) &key object fps)
+  (with-slots (act-object draw-object glut::tick-interval) win
+    (setf act-object object draw-object object)
+    (if fps (setf glut::tick-interval (round (/ 1000 fps))))))
 
-(defmethod glut:display ((w window))
-  (act-keys)
-  (draw *draw-object*)
-  (act *act-object*))
+(defmethod glut:reshape ((win window) w h)
+  (gl:ortho -1 1 -1 1 -1 1))
 
 
-(defmethod glut:display :after ((w window))
-  (glut:swap-buffers))
+(defmethod glut:display-window :before ((win window))
+  (gl:clear-color 1 1 1 0)
+  (gl:enable :depth-test)
+  (gl:matrix-mode :modelview)
+  (gl:load-identity)
+  (with-slots ((w glut:width) (h glut:height)) win
+    (let ((w (/ w 2))
+          (h (/ h 2)))
+      (gl:ortho (- w) w h (- h) -1024 1024))))
+
+(defmethod glut:display :before ((win window))
+  (gl:clear :color-buffer :depth-buffer))
+
+(defmethod glut:display ((win window))
+  (draw (slot-value win 'draw-object)))
+
+(defmethod glut:display :after ((win window))
+  (glut:swap-buffers)
+  )
+
 
 (defmethod glut:keyboard ((w window) key x y)
   (press-key key))
@@ -44,12 +48,10 @@
 (defmethod glut:keyboard-up ((w window) key x y)
   (release-key key))
 
-
-
-(defun run (time)
-  (loop
-     (sleep time)
-     (glut:post-redispay)))
+(defmethod glut:tick ((win window))
+  (act-keys)
+  (act (slot-value win 'act-object))
+  (glut:post-redisplay))
 
 #+nil
 (defun package-generic-functions ()
@@ -57,3 +59,23 @@
                                                    (typep (symbol-function symbol) 'generic-function)))
                              (apropos-list "" :glut t)))
     (print gf)))
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

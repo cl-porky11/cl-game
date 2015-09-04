@@ -4,7 +4,9 @@
   (:export #:defaccessor
            #:with-instances
            #:funcall-if
-           #:apply-if))
+           #:apply-if
+           #:vector-bind
+           ))
 
 (in-package #:clg-util)
 
@@ -36,5 +38,6 @@
 (defmacro vector-bind (list vec &body body &aux (i -1))
   (with-gensyms (vector)
     `(let ((,vector ,vec))
-       (let ,(mapcar (lambda (var) `(,var (aref ,vector (incf i)))))
+       (let ,(mapcar (lambda (var) `(,var (aref ,vector ,(incf i)))) list)
          ,@body))))
+

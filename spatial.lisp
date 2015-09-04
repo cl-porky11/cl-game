@@ -15,8 +15,8 @@
            #:vel
            #:vel-
 
-           #:rotate
-           #:angeled
+           #:spin
+           #:angled
            #:ang
 
            #:boost
@@ -59,7 +59,10 @@
            #:size
 
            #:ball
+           #:colored
            ))
+
+(in-package #:clg-spat)
 
 
 (defgeneric draw (object)
@@ -69,7 +72,8 @@
   (:method (object)))
 
 (defgeneric interact (objecta objectd)
-  (:method-combination progn))
+  (:method-combination progn)
+  (:method progn (a d)))
 
 
 ;;;default-methods
@@ -85,20 +89,20 @@
      do
        (act object)))
 
-(defmethod interact :around ((actora list) actord)
+(defmethod interact progn ((actora list) actord)
   (dolist (actor actora)
     (interact actor actord)))
 
-(defmethod interact :around (actora (actord list))
+(defmethod interact progn (actora (actord list))
   (dolist (actor actord)
     (interact actora actor)))
 
 
 ;;;classes
 
-(defclass drawable () ())
+(defclass transformed () ())
 
-(defmethod draw :around ((some drawable))
+(defmethod draw :around ((some transformed))
   (gl:with-pushed-matrix
     (call-next-method)))
 
@@ -107,7 +111,7 @@
 
 (defgeneric move (pos vector))
 
-(defclass positional (drawable)
+(defclass positional (transformed)
   ((pos :accessor pos
         :initarg :pos
         :type (vector real))))
@@ -116,7 +120,7 @@
   (aref (pos positional) number))
 
 (defmethod draw :before ((pos positional))
-  (apply #'gl:translate (coerce (pos pos) 'list)))
+  (gl:translate (pos- pos 0) (pos- pos 1) (pos- pos 2)))
 
 (defmethod move ((pos positional) vector)
   (incv (pos pos) vector))
@@ -148,57 +152,66 @@
 
 ;;;angeled
 
-(defgeneric rotate (object vector))
+(defgeneric spin (object vector))
 
-(defclass angled (drawable)
+(defclass angled (transformed)
   ((ang :accessor ang)))
 
 (defun ensure-quaternion (quat)
   (etypecase quat
-    (null #.(quaternion-from-axis-angle #(0 0 1) 0))
-    (number (quaternion-from-axis-angle #(0 0 1) ang))
-    ((cons number (cons sequence nil)) (quaternion-from-axis-angle (cadr ang) (car ang)))
-    ((cons number sequence) (quaternion-from-axis-angle (cdr ang) (car ang)))
-    (quaternion ang)))
+    (null (quaternion-from-axis-angle #(0 0 1) 0))
+    (number (quaternion-from-axis-angle #(0 0 1) quat))
+    ((cons number (cons sequence null)) (quaternion-from-axis-angle (cadr quat) (car quat)))
+    ((cons number sequence) (quaternion-from-axis-angle (cdr quat) (car quat)))
+    (quaternion quat)))
 
 (defmethod initialize-instance :after ((ins angled) &key ang)
-  (setf (slot-value ins 'ang
-                    (ensure-quaternion ang))))
+  (setf (slot-value ins 'ang)
+        (ensure-quaternion ang)))
 
 (defmethod draw :before ((rot angled))
-  (bind-quaternion (r x y z) (rot rot)
-    (gl:rotate (* 2 (asin r)) x y z)))
+  (bind-quaternion (r x y z) (ang rot)
+;    (print (list (* 2 (asin r)) x y z))
+    (gl:rotate (/ (* 360 (asin r)) pi) x y z)))
 
-(defun qrotate (q p)
-  (q* p q (quat::qconjugate p)))
+(defun qspin (q p)
+  (qnormalized (q* p q)))
 
 (defmacro incrot (place angle)
-  `(setf ,place (qrotate ,place ,angle)))
+  `(setf ,place (qspin ,place ,angle)))
 
-(defmethod rotate (angled angle)
+(defmethod spin (angled angle)
   (incrot (ang angled) angle))
 
+(defun qtest ()
+  (clg-spat::qspin (quat:quaternion-from-axis-angle #(0 0 1) pi)
+                     (quat:quaternion-from-axis-angle #(0 0 1) (* pi 1))))
 
-;;;rotating
+(defun qangle (q)
+  (bind-quaternion (r i j k) q
+    (declare (ignore i j k))
+    (sin (/ r 2))))
+
+;;;rotator
 
 (defgeneric boost (rotating angle))
 
-(defun boost2 (rota rotd angle (faca 1) (facd (/ faca)))
-  (boost rota (* angle faca))
-  (boost rotd (* angle facd)))
+(defun boost2 (rota rotd angle &optional (faca 1) (facd (/ faca)))
+  (boost rota (quat::qconjugate (q* angle (quaternion faca 0 0 0))))
+  (boost rotd (q* angle (quaternion facd 0 0 0))))
 
 (defclass rotator ()
-  ((rot :accessor rot :initarg rot)))
+  ((rot :accessor rot)))
 
-(defmethod initialize-instance :after ((ins rotater) &key ang)
-  (setf (slot-value ins 'ang
-                    (ensure-quaternion ang))))
+(defmethod initialize-instance :after ((ins rotator) &key rot)
+  (setf (slot-value ins 'rot)
+        (ensure-quaternion rot)))
 
 (defmethod boost (rotator angle)
   (incrot (rot rotator) angle))
 
-(defmethod act :after ((rot rotater))
-  (rotate rot (rot rot)))
+(defmethod act :after ((rot rotator))
+  (spin rot (rot rot)))
 
 
 ;;;collide
@@ -216,6 +229,9 @@
 
 (defgeneric current-vector (posa posd)
   (:documentation "Computes the current distance of two objects as a Vector"))
+
+(let ((*package* (find-package :cl))) 
+  (define-method-combination * :identity-with-one-argument t))
 
 (defgeneric collide-factor (self other)
   (:method-combination *)
@@ -264,7 +280,7 @@ depends on the generic function #'CURRENT-VECTOR"
           (/ (- distance target) distance))))
 
 (defun edge-vector (posa posd)
-  (relative-vector (touch-distance posa posd)
+  (distance-vector (touch-distance posa posd)
                    (current-vector posa posd)))
 
 (defclass repeller (collider) ())
@@ -275,14 +291,17 @@ depends on the generic function #'CURRENT-VECTOR"
 (defmethod collide progn ((posa repeller) (posd repeller))
   (repel posa posd (repel-vector posa posd) (repel-factor posa posd) (repel-factor posd posa)))
 
-(defmethod repel ((posa repeller) (posd repeller) acc faca facd)
+(defmethod repel (posa posd acc faca facd)
   (accelerate2 posa posd acc faca facd))
 
+#+nil
 (defmethod repel ((posa repeller) posd acc)
   (accelerate posa acc))
+#+nil
 (defmethod repel (posa (posd repeller) acc)
   (accelerate posd (v- acc)))
 
+;;(defmethod repel (
 
 ;;;soft
 
@@ -297,13 +316,16 @@ depends on the generic function #'CURRENT-VECTOR"
 
 ;;;rolling
 
-(defgeneric roll (rota rotd bs))
-
-(defgeneric roll-angle (rota rotd))
+(defgeneric roll (rota rotd bs faca facd))
 
 (defgeneric roll-vector (rota rotd)
-  (:method-combination v+)
-  (:method v+ (rota rotd)
+  (:method-combination v+))
+
+(defmethod roll-vector :around (rota rotd)
+  (v- (call-next-method)))
+
+(defgeneric roll-angle (rota rotd)
+  (:method (rota rotd)
     (let ((roll (roll-vector rota rotd))
           (curr (current-vector rota rotd)))
       (quaternion-from-axis-angle
@@ -311,17 +333,17 @@ depends on the generic function #'CURRENT-VECTOR"
        (line-distance (roll-vector rota rotd)
                       (current-vector rota rotd))))))
 
-(defgeneric roll-factor * (self other)
-  (:method (self other) (collide-factor self other)))
+(defgeneric roll-factor (self other)
+  (:method-combination *)
+  (:method * (self other) (collide-factor self other)))
 
 (defmethod roll (rota rotd bs faca facd)
-  (:method (rota rotd bs)
-    (boost2 rota rotd bs (roll-factor posa) (roll-factor rota rotd) (roll-factor rotd rota))))
+  (boost2 rota rotd bs faca facd))
 
 (defclass roller (collider) ())
 
-(defmethod collide progn ((rota rolling) (rotd rolling))
-  (roll rota rotd (roll-angle rota rotd)))
+(defmethod collide progn ((rota roller) (rotd roller))
+  (roll rota rotd (roll-angle rota rotd) (roll-factor rota rotd) (roll-factor rotd rota)))
 
 
 ;;;smooth
@@ -364,52 +386,66 @@ depends on the generic function #'CURRENT-VECTOR"
 
 ;;;scaled
 
-(defclass scaled (drawable)
-  (size :accessor size
-        :initarg :size
-        :type real))
+(defclass scaled (transformed)
+  ((size :accessor size
+         :initarg :size
+         :type real)))
 
 (defmethod draw :before ((pos scaled) &aux (size (size pos)))
   (gl:scale size size size))
 
+(defmethod roll-factor * ((self scaled) other)
+  (/ (size self)))
+
+(defmethod single-touch-distance ((ball scaled))
+  (size ball))
 
 ;;;ball
 
-(defclass ball (drawable) ())
+(defclass ball (scaled) ())
 
 (defmethod draw ((ball ball))
-  (draw-circle)
-  (gl:rotate #.(/ pi 2) 1 0 0)
-  (draw-circle)
-  (gl:rotate #.(/ pi 2) 0 1 0)
-  (draw-circle))
-
-(defmethod single-touch-distance ((ball ball))
-  (size ball))
+  (gl:with-pushed-matrix
+    (draw-circle)
+    (gl:rotate 90 1 0 0)
+    (draw-circle)
+    (gl:rotate 90 0 1 0)
+    (draw-circle)))
 
 (defmethod roll-vector v+ ((posa ball) posd)
   (bind-quaternion (a x y z) (rot posa)
-    (v* (cross3 (vector-of real x y z) (current-vector posa posd) (* 2 (asin a))))))
+    (if (/= a 1)
+        (let ((cur (current-vector posa posd))
+              (vec (vector-of 'real x y z)))
+          (v* (cross3 vec cur) (sin (angle vec cur)) (size posa) (* 2 (asin a))))
+        (vector-of 'real 0 0 0))))
 
 (defmethod roll-vector v+ (posa (posd ball))
   (bind-quaternion (a x y z) (rot posd)
-    (v* (cross3 (vector-of real x y z) (current-vector posa posd) (* 2 (asin a))))))
+    (if (/= a 1)
+        (let ((cur (current-vector posa posd))
+              (vec (vector-of 'real x y z)))
+          (v* (cross3 cur vec) (sin (angle vec cur)) (size posa) (* 2 (asin a))))
+        (vector-of 'real 0 0 0))))
 
-(defmethod roll-vector v+ ((posa ball) (posd ball))
-  (v- (vel posd) (vel posa)))
+(defmethod roll-vector v+ ((posa mover) mover)
+  (v- (vel posa)))
 
+(defmethod roll-vector v+ (posa (posd mover))
+  (vel posd))
+
+#+nil
 (defmethod roll :before ((balla ball) (balld ball) bs faca facd)
   (bind-quaternion (a i j k) bs
-    (repel posa posd (v* (unit-vector (cross3 (current-vector balla balld)
-                                              (vector-of real i j k)))
-                         2 (asin a))
+    (repel balla balld (v* (unitvec (cross3 (current-vector balla balld)
+                                            (vector-of 'real i j k)))
+                           2 (asin a))
            faca facd)))
                                             
 
 #+nil
 (defun roundd (num div)
   (* (round num div) div))
-
 
 ;;;
 
@@ -436,9 +472,6 @@ depends on the generic function #'CURRENT-VECTOR"
   (gl:with-primitive :lines
     (gl:vertex 0 0 0)
     (gl:vertex 1 0 0)))
-
-(defmethod act (ball test-ball)
-  (rotate
 
 
 #|

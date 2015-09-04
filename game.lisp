@@ -1,6 +1,6 @@
 (defpackage #:cl-game
   (:nicknames #:clg)
-  (:use #:cl #:clg-win #:bordeaux-threads)
+  (:use #:cl #:clg-spat #:clg-win #:bordeaux-threads)
   (:export #:start
            #:example))
 
@@ -8,15 +8,31 @@
 
     
 
-(defun start (&key (fps 32) ((:width *width*) 1280) ((:height *height*) 768)
-                object
-                ((:act-object *act-objects*) object) ((:draw-object *draw-object*) object))
-  (make-thread (lambda () (run (/ fps))))
-  (glut:display-window (make-instance 'window :width 768 :height 768 :resizable t)))
+(defun start (&rest keys)
+  (glut:display-window (apply 'make-instance 'window keys)))
+
+(defclass test-ball (positional angled rotator ball colored roller) ())
 
 (defun example ()
-  (start :object 
+  (start :fps 32
+         :object
+         (list
+          (make-instance 'test-ball
+                         :pos (vector -16 0 0); :vel (vector 1/8 0 0)
+                         :color (list 1 0 0) :size 16
+                         ;;:rot (/ pi 16)
+                         )
+          (make-instance 'test-ball
+                         :pos (vector 16 0 0); :vel (vector 0 0 0)
+                         :color (list 0 1 1) :size 16
+                         :rot (quat:quaternion-from-axis-angle #(1 2 3) (* pi 1/256))
+                         ))))
 
+(defmethod draw :after ((ball test-ball))
+  (gl:color 0 0 0)
+  (gl:with-primitive :lines
+    (gl:vertex 0 0)
+    (gl:vertex 0 1)))
 
 #|
 (defun start ()

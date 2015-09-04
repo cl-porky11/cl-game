@@ -10,13 +10,16 @@
 
 (in-package #:clg-gl)
 
-(defvar *circle-quality* 16)
+(defparameter *circle-quality* 5)
 
 (defun draw-circle (&optional (quality *circle-quality*))
-  (gl:with-primitive :triangle-fan
-    (dotimes (i quality)
-      (let ((rot (* 2 pi (/ i quality))))
-        (gl:vertex (cos rot) (sin rot))))))
+  (gl:with-pushed-attrib (:current-bit)
+    (gl:with-primitive :triangle-fan
+      (gl:vertex 0 0)
+      (gl:color 0 0 0)
+      (dotimes (i (1+ quality))
+        (let ((rot (* 2 pi (/ i quality))))
+          (gl:vertex (cos rot) (sin rot)))))))
 
 (defun draw-line (posa posd)
   (let ((< (>= (length posa) 3)))

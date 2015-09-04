@@ -31,6 +31,8 @@
            #:check-key
            ))
 
+(in-package #:clg-in)
+
 
 (defvar *key-press-actions* (make-hash-table))
 (defvar *key-release-actions* (make-hash-table))
