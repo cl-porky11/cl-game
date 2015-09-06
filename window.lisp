@@ -29,9 +29,11 @@
   (with-slots ((w glut:width) (h glut:height)) win
     (let ((w (/ w 2))
           (h (/ h 2)))
-      (gl:ortho (- w) w h (- h) -1024 1024))))
+      (gl:ortho (- w) w h (- h) -1024 1024)))
+  )
 
 (defmethod glut:display :before ((win window))
+  (gl:matrix-mode :modelview)
   (gl:clear :color-buffer :depth-buffer))
 
 (defmethod glut:display ((win window))

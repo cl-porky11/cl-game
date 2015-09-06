@@ -3,6 +3,7 @@
   (:use #:cl #:alexandria)
   (:export #:defaccessor
            #:with-instances
+           #:mulf
            #:funcall-if
            #:apply-if
            #:vector-bind
@@ -41,3 +42,4 @@
        (let ,(mapcar (lambda (var) `(,var (aref ,vector ,(incf i)))) list)
          ,@body))))
 
+(define-modify-macro mulf (pos &rest args) *)

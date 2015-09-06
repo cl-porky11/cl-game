@@ -172,7 +172,7 @@
 (defmethod draw :before ((rot angled))
   (bind-quaternion (r x y z) (ang rot)
 ;    (print (list (* 2 (asin r)) x y z))
-    (gl:rotate (/ (* 360 (asin r)) pi) x y z)))
+    (gl:rotate (/ (* 360 (acos r)) pi) x y z)))
 
 (defun qspin (q p)
   (qnormalized (q* p q)))
@@ -197,7 +197,7 @@
 (defgeneric boost (rotating angle))
 
 (defun boost2 (rota rotd angle &optional (faca 1) (facd (/ faca)))
-  (boost rota (quat::qconjugate (q* angle (quaternion faca 0 0 0))))
+  (boost rota (q* angle (quaternion faca 0 0 0)))
   (boost rotd (q* angle (quaternion facd 0 0 0))))
 
 (defclass rotator ()
@@ -316,22 +316,38 @@ depends on the generic function #'CURRENT-VECTOR"
 
 ;;;rolling
 
+(defun vector-angle (roll side)
+  (quaternion-from-axis-angle
+   (unitvec (cross3 roll side))
+   (line-distance roll side)))
+
+(defun angle-vector (ang side)
+  (bind-quaternion (a x y z) ang
+    (if (= a 1)
+        (vector-of 'real 0 0 0)
+        (let* ((vec (vector-of 'real x y z))
+               (dir (cross3 side vec))
+               (abs (absvec dir))
+               (acc (sin (angle vec side))))
+          (if (or (zerop abs) (zerop acc))
+              (vector-of 'real 0 0 0)
+              (v* (v/ dir abs) acc 2 (acos a)))))))
+
+(defun vav (roll side)
+  (angle-vector (vector-angle roll side) side))
+
 (defgeneric roll (rota rotd bs faca facd))
 
 (defgeneric roll-vector (rota rotd)
   (:method-combination v+))
 
 (defmethod roll-vector :around (rota rotd)
-  (v- (call-next-method)))
+  (call-next-method))
 
 (defgeneric roll-angle (rota rotd)
   (:method (rota rotd)
-    (let ((roll (roll-vector rota rotd))
-          (curr (current-vector rota rotd)))
-      (quaternion-from-axis-angle
-       (cross3 roll curr)
-       (line-distance (roll-vector rota rotd)
-                      (current-vector rota rotd))))))
+    (vector-angle (roll-vector rota rotd)
+                  (current-vector rota rotd))))
 
 (defgeneric roll-factor (self other)
   (:method-combination *)
@@ -413,20 +429,10 @@ depends on the generic function #'CURRENT-VECTOR"
     (draw-circle)))
 
 (defmethod roll-vector v+ ((posa ball) posd)
-  (bind-quaternion (a x y z) (rot posa)
-    (if (/= a 1)
-        (let ((cur (current-vector posa posd))
-              (vec (vector-of 'real x y z)))
-          (v* (cross3 vec cur) (sin (angle vec cur)) (size posa) (* 2 (asin a))))
-        (vector-of 'real 0 0 0))))
+  (angle-vector (rot posa) (current-vector posa posd)))
 
-(defmethod roll-vector v+ (posa (posd ball))
-  (bind-quaternion (a x y z) (rot posd)
-    (if (/= a 1)
-        (let ((cur (current-vector posa posd))
-              (vec (vector-of 'real x y z)))
-          (v* (cross3 cur vec) (sin (angle vec cur)) (size posa) (* 2 (asin a))))
-        (vector-of 'real 0 0 0))))
+(defmethod roll-vector v+ ((posa ball) posd)
+  (angle-vector (rot posd) (current-vector posd posa)))
 
 (defmethod roll-vector v+ ((posa mover) mover)
   (v- (vel posa)))
@@ -439,7 +445,7 @@ depends on the generic function #'CURRENT-VECTOR"
   (bind-quaternion (a i j k) bs
     (repel balla balld (v* (unitvec (cross3 (current-vector balla balld)
                                             (vector-of 'real i j k)))
-                           2 (asin a))
+                           2 (acos a))
            faca facd)))
                                             
 
@@ -459,8 +465,11 @@ depends on the generic function #'CURRENT-VECTOR"
 (defclass colored ()
   ((color :accessor color :initform (list 1 1 1) :initarg :color)))
 
-(defmethod draw :before ((colored colored))
-  (apply #'gl:color (color colored)))
+(defmethod draw :around ((colored colored))
+  (gl:with-pushed-attrib (:current-bit)
+    (apply #'gl:color (color colored))
+    (call-next-method)))
+  
 
 
 ;;;test

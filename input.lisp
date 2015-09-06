@@ -10,9 +10,9 @@
            #:release-action
            #:hold-action
            
-           #:reset-press-action
-           #:reset-release-action
-           #:reset-hold-action
+           #:reset-press-actions
+           #:reset-release-actions
+           #:reset-hold-actions
            
            #:remove-press-action
            #:remove-release-action

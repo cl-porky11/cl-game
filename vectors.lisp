@@ -74,7 +74,7 @@
   (apply #'mapv #'- vectors))
 
 (defmacro vector-function (fo fi var)
-  `(lambda (num) (funcall ,fo (apply ,fi num ,var))))
+  `(lambda (num) (apply ,fo num (if ,var (list (apply ,fi ,var))))))
 
 (defun v* (vector &rest numbers)
   (mapvec (vector-function #'* #'* numbers) vector))
