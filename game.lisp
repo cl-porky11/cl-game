@@ -11,7 +11,7 @@
 (defun start (&rest keys)
   (glut:display-window (apply 'make-instance 'window keys)))
 
-(defclass test-ball (positional mover angled rotator ball colored soft repeller) ())
+(defclass test-ball (positional mover physical ball colored angled rotator repeller roller) ())
 
 (defvar *example-object*)
 
@@ -22,42 +22,20 @@
          (cons
           (setq *example-object*
                 (make-instance 'test-ball
-                               :pos (vector -32 0 -16) :vel (vector 0 0 0)
+                               :pos (vector -32 0 16) :vel (vector 0 0 0)
                                :color (list 1 0 0) :size 16
-                               :hardness 1
-                               :rot (quat:quaternion-from-axis-angle #(0 0 1) (* pi 1/65536))
+                               :mass (* 4 4 4)
+                               :rot (vector 1 0 0)
                                ))
           (mapcar (lambda (arg)
                     (make-instance 'test-ball
-                                   :pos (vector (* 32 arg) 0 (- (* 2 arg))) :vel (vector 0 0 0)
-                                   :hardness 1/2
-                                   :color (list 0 1 1) :size (* 2 arg)
-                                   :rot (quat:quaternion-from-axis-angle #(0 0 1) (* pi 1/65536))))
-                  (iota 9 :start 1)))))
+                                   :pos (vector (* 4 arg arg) 0 (* 4 arg)) :vel (vector 0 0 0)
+                                   :color (list 0 1 1) :size (* 4 arg)
+                                   :mass (* arg arg arg)
+                                   :rot (vector 1 0 0)
+                                   ))
+                  (iota 8 :start 1)))))
 
-
-
-(define-press-action #\Escape
-  (glut:destroy-window 1))
-
-
-
-(let ((fac 1/4))
-  (define-hold-action #\a
-    (accelerate *example-object* (vector (- fac) 0 0))
-    (boost *example-object* (quaternion-from-axis-angle #(0 -1 0) (/ fac (size *example-object*)))))
-  
-  (define-hold-action #\w
-    (accelerate *example-object* (vector 0 (- fac) 0))
-    (boost *example-object* (quaternion-from-axis-angle #(1 0 0) (/ fac (size *example-object*)))))
-  
-  (define-hold-action #\s
-    (accelerate *example-object* (vector 0 fac 0))
-    (boost *example-object* (quaternion-from-axis-angle #(-1 0 0) (/ fac (size *example-object*)))))
-  
-  (define-hold-action #\d
-    (accelerate *example-object* (vector fac 0 0))
-    (boost *example-object* (quaternion-from-axis-angle #(0 1 0) (/ fac (size *example-object*))))))
 
 
 (defmethod act :after ((ball test-ball))
@@ -66,13 +44,34 @@
         (accelerate ball (vector 0 0 (- z)))
         (accelerate ball (vector 0 0 -1))))
   (mulv (vel ball) 15/16)
-  (setf (rot ball)
-        (bind-quaternion (r x y z) (rot ball)
-          (let ((angle (* 2 (acos r))))
-            (quaternion-from-axis-angle (unitvec (vector x y z))
-                                        (* angle 15/16))))))
+  (mulv (spin ball) 15/16))
+
+(define-press-action #\Escape
+  (dotimes (i (length glut::*id->window*))
+    (glut:destroy-window i)))
+
+
+
+(let ((fac 1/4))
+  (define-hold-action (#\a :key-left)
+    (accelerate *example-object* (vector (- fac) 0 0))
+    (boost *example-object* (make-rotation :axis #(0 -1 0) :angle (/ fac (size *example-object*)))))
+  
+  (define-hold-action (#\w :key-up)
+    (accelerate *example-object* (vector 0 (- fac) 0))
+    (boost *example-object* (make-rotation :axis #(1 0 0) :angle (/ fac (size *example-object*)))))
+  
+  (define-hold-action (#\s :key-down)
+    (accelerate *example-object* (vector 0 fac 0))
+    (boost *example-object* (make-rotation :axis #(-1 0 0) :angle (/ fac (size *example-object*)))))
+  
+  (define-hold-action (#\d :key-right)
+    (accelerate *example-object* (vector fac 0 0))
+    (boost *example-object* (make-rotation :axis #(0 1 0) :angle (/ fac (size *example-object*))))))
+
+
             
-(setq clg-gl::*circle-quality* 16)
+(setq clg-gl::*circle-quality* 7)
 #|
 (defun start ()
   (sdl2:with-init (:everything)

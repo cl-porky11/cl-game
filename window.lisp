@@ -22,7 +22,9 @@
 
 
 (defmethod glut:display-window :before ((win window))
+  (reset-keys)
   (gl:clear-color 1 1 1 0)
+  (gl:color 0 0 0)
   (gl:enable :depth-test)
   (gl:matrix-mode :modelview)
   (gl:load-identity)
@@ -50,6 +52,12 @@
 (defmethod glut:keyboard-up ((w window) key x y)
   (release-key key))
 
+(defmethod glut:special ((w window) key x y)
+  (press-key key))
+
+(defmethod glut:special-up ((w window) key x y)
+  (release-key key))
+
 (defmethod glut:tick ((win window))
   (act-keys)
   (act (slot-value win 'act-object))
@@ -62,6 +70,7 @@
                              (apropos-list "" :glut t)))
     (print gf)))
 
+;(glut:special 
 
 
 

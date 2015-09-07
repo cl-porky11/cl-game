@@ -21,6 +21,7 @@
            #:unitvec
            #:distance
            #:scalar
+           #:unit-scalar
            #:angle
            #:cross3
 
@@ -90,7 +91,10 @@
   (sqrt (reduce #'+ (mapvec (lambda (line) (expt line 2)) vector))))
 
 (defun unitvec (vector)
-  (v/ vector (absvec vector)))
+  (let ((abs (absvec vector)))
+    (if (zerop abs)
+        (v* vector 0)
+        (v/ vector (absvec vector)))))
 
 (defun distance (vectora vectord)
   (absvec (v- vectora vectord)))
@@ -105,6 +109,7 @@
   (mod (acos (unit-scalar veca vecd)) pi))
 
 (defun cross3 (veca vecd)
+  (declare (type (vector number 3) veca vecd))
   (vector-bind (a1 a2 a3) veca
     (vector-bind (d1 d2 d3) vecd
       (vector

@@ -64,9 +64,14 @@
                     (remhash key actions))
                   (defun ,(intern (format nil "CALL-~a-ACTION" name)) (key)
                     (funcall-if (,(intern (format nil "~a-ACTION" name)) key)))
-                  (defmacro ,(intern (format nil "DEFINE-~a-ACTION" name)) (key &body body)
-                    `(eval-when (:load-toplevel :compile-toplevel :execute)
-                         (setf (,',(intern (format nil "~a-ACTION" name)) ',,'key) (lambda () ,@body))))))
+                  (defmacro ,(intern (format nil "DEFINE-~a-ACTION" name)) (keys &body body)
+                    (with-gensyms (function)
+                      `(eval-when (:load-toplevel :compile-toplevel :execute)
+                         (let ((,function (lambda () ,@body)))
+                           ,@(mapcar (lambda (key)
+                                       `(setf (,',(intern (format nil "~a-ACTION" name)) ,key)
+                                              ,function))
+                                     (ensure-list keys))))))))
              (define-actions* (&rest names)
                `(progn
                   ,@(loop for name in names
@@ -84,3 +89,4 @@
 (defun act-keys ()
   (dolist (key *keys*)
     (call-hold-action key)))
+
