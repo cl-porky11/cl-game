@@ -1,7 +1,8 @@
 (defpackage #:cl-game-opengl
   (:nicknames #:clg-gl)
-  (:use #:cl)
+  (:use #:cl #:clg-rot)
   (:export #:with-transformation
+           #:rotate-with-rotation
            #:draw-line
            #:draw-circle
            #:draw-primitive
@@ -10,7 +11,7 @@
 
 (in-package #:clg-gl)
 
-(defparameter *circle-quality* 5)
+(defparameter *circle-quality* 16)
 
 (defun draw-circle (&optional (quality *circle-quality*))
   (gl:with-pushed-attrib (:current-bit)
@@ -20,6 +21,12 @@
       (dotimes (i (1+ quality))
         (let ((rot (* 2 pi (/ i quality))))
           (gl:vertex (cos rot) (sin rot)))))))
+
+(defun rotate-with-rotation (rot)
+  (gl:rotate (/ (* 180 (rotation-angle rot) ) pi)
+             (aref rot 0)
+             (aref rot 1)
+             (aref rot 2)))
 
 (defun draw-line (posa posd)
   (let ((< (>= (length posa) 3)))

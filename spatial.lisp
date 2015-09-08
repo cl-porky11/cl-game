@@ -1,6 +1,8 @@
 (defpackage #:clg-spat
-  (:use #:cl #:clg-util #:clg-vec #:clg-gl #:alexandria #:quat)
-  (:export #:draw
+  (:use #:cl #:clg-util #:clg-vec #:clg-rot #:clg-gl #:alexandria)
+  (:import-from #:glut
+                #:display)
+  (:export #:display
            #:act
            #:interact
            
@@ -15,12 +17,6 @@
            #:vel
            #:vel-
 
-           #:make-rotation
-           #:rotation-angle
-           #:rotation-axis
-           #:r*
-           #:mulr
-           
            #:turn
            #:angled
            #:rot
@@ -29,6 +25,10 @@
            #:boost2
            #:rotator
            #:spin
+
+           #:slow
+           #:breaker
+           #:friction
 
            #:collide
            #:single-touch-distance
@@ -50,7 +50,7 @@
            #:hardness
 
            #:roll
-           #:roll-angle
+           #:roll-rotation
            #:roll-vector
            #:roll-factor
            #:roller
@@ -61,21 +61,35 @@
            #:physical
            #:mass
 
+           #:*gravity*
+           #:graviton
+
            #:scaled
            #:size
 
            #:ball
            #:colored
+
+           #:camera
+           #:focusing
+           #:looking
+           
+           #:cluster
+           #:solid-cluster
+           #:gravity-cluster
            ))
 
 (in-package #:clg-spat)
 
+(defmacro show (&rest vars)
+  `(progn (format t ,(format nil "~{~a: ~~a~^; ~}~%" vars) ,@vars)
+          (list ,@vars)))
 
-(defgeneric draw (object)
-  (:method (object)))
+(defmethod display (object))
 
 (defgeneric act (object)
-  (:method (object)))
+  (:method-combination progn)
+  (:method progn (object)))
 
 (defgeneric interact (objecta objectd)
   (:method (a d)))
@@ -83,11 +97,11 @@
 
 ;;;default-methods
 
-(defmethod draw ((objects list))
+(defmethod display ((objects list))
   (dolist (object objects)
-    (draw object)))
+    (display object)))
 
-(defmethod act ((objects list))
+(defmethod act progn ((objects list))
   (loop for (object . rest) on objects
      do
        (interact object rest)
@@ -107,9 +121,14 @@
 
 (defclass transformed () ())
 
-(defmethod draw :around ((some transformed))
+(defmethod display :around ((some transformed))
   (gl:with-pushed-matrix
     (call-next-method)))
+
+(defvar *default-dimension* 3)
+
+(defclass dimensional ()
+  ((dim :initarg :dim :initform *default-dimension*)))
 
 
 ;;;positions
@@ -119,12 +138,13 @@
 (defclass positional (transformed)
   ((pos :accessor pos
         :initarg :pos
+        :initform (vector 0 0 0)
         :type (vector real))))
 
 (defaccessor pos- (positional number)
   (aref (pos positional) number))
 
-(defmethod draw :before ((pos positional))
+(defmethod display :before ((pos positional))
   (gl:translate (pos- pos 0) (pos- pos 1) (pos- pos 2)))
 
 (defmethod move ((pos positional) vector)
@@ -142,74 +162,24 @@
 (defclass mover ()
   ((vel :accessor vel
         :initarg :vel
+        :initform (vector 0 0 0)
         :type (vector real))))
+
+#+nil
+(defmethod initialize-instance ((pos mover) &key)
+  (with-slots (dim) pos
+    (if (slot-unbound 'positional pos 'vel)
+        (setf (slot-value pos 'vel) (make-array dim :initial-element 0)))))
 
 (defaccessor vel- (positional number)
   (aref (vel positional) number))
 
-(defmethod act :after ((mover mover))
+(defmethod act progn ((mover mover))
   (move mover (vel mover)))
 
 (defmethod accelerate ((mover mover) vector)
   (incv (vel mover) vector))
 
-;;rotation
-
-(declaim (inline make-rotation
-                 rotation-angle rotation-axis rotation-axis-
-                 (setf rotation-angle) (setf rotation-axis) (setf rotation-axis-)))
-
-(defun make-rotation (&key angle axis)
-  (v* (unitvec axis) angle))
-
-(defun rotation-angle (rot)
-  (absvec rot))
-
-(defun (setf rotation-angle) (angle rot)
-  (if-let ((abs (absvec rot)))
-    (mulv rot (/ angle abs))))
-
-(defun rotation-axis (rot)
-  (unitvec rot))
-
-(defun (setf rotation-axis) (axis rot)
-  (setv rot (v* (unitvec (/ (absvec rot) (absvec axis))))))
-
-#+nil
-(defaccessor rotation-axis- (rot number)
-  (aref (rotation-axis rot) number))
-
-
-(defun r* (rota rotd)
-  (let* ((absa (/ (rotation-angle rota) 2)) (absd (/ (rotation-angle rotd) 2))
-         (veca (v* (rotation-axis rota) (sin absa))) (vecd (v* (rotation-axis rotd) (sin absd)))
-         (cosa (cos absa)) (cosd (cos absd))
-         (ang (- (* cosa cosd) (* (scalar veca vecd))))
-         (rot (v+ (cross3 veca vecd) (v* veca cosd) (v* vecd cosa))))
-    (make-rotation :axis (unitvec rot)
-                   :angle (* 2 (acos ang)))))
-
-(defun rt ()
-  (r* (make-rotation :angle 0 :axis #(0 0 1))
-      (make-rotation :angle (* pi 1/2) :axis #(0 0 1))))
-
-
-(defun ct (rota rotd)
-  (v- (cross3 rota rotd) (cross3 rotd rota)))
- 
-(defun mulr (rota rotd)
-  (setv rota (r* rotd rota)))
-
-(defun tmr ()
-  (let ((rot (make-rotation :angle 0 :axis #(0 0 0))))
-    (mulr rot (make-rotation :angle (* pi 1/2) :axis #(0 1 0)))
-    (mulr rot (make-rotation :angle (* pi 1/2) :axis #(0 0 1)))
-    (mulr rot (make-rotation :angle (* pi 1/2) :axis #(1 0 0)))
-    rot))
-
-(defmacro show (&rest vars)
-  `(progn (format t ,(format nil "~{~a: ~~a~^; ~}~%" vars) ,@vars)
-          (list ,@vars)))
 
 ;;;angeled
 
@@ -219,12 +189,9 @@
   ((rot :accessor rot :initarg :rot :type rotation
         :initform (make-rotation :angle 0 :axis #(0 0 1)))))
 
-(defmethod draw :before ((rot angled))
-  (with-accessors ((ang rot)) rot
-    (gl:rotate (/ (* 180 (rotation-angle ang)) pi)
-               (rotation-axis- ang 0)
-               (rotation-axis- ang 1)
-               (rotation-axis- ang 2))))
+(defmethod display :before ((rot angled))
+  (with-accessors ((r rot)) rot
+    (rotate-with-rotation r)))
 
 
 (defmethod turn (angled rot)
@@ -245,12 +212,32 @@
          :initform (make-rotation :angle 0 :axis #(0 0 1)))))
 
 (defmethod boost (rotator rot)
-  (mulr (spin rotator) rot)
+  ;;(mulr (spin rotator) rot)
+  #+nil
+  (if (< (/ pi 2) (rotation-angle (spin rotator)))
+      (print :danger))
+  (incv (spin rotator) rot)
   )
 
-(defmethod act :after ((rot rotator))
+(defmethod act progn ((rot rotator))
   (turn rot (spin rot)))
 
+;;;friction
+
+(defgeneric slow (obj)
+  (:method-combination progn))
+
+(defclass breaker ()
+  ((friction :accessor friction :initarg :friction :initform 1)))
+
+(defmethod act progn ((rot breaker))
+  (slow rot))
+
+(defmethod slow progn ((mover mover))
+  (mulv (vel mover) (friction mover)))
+
+(defmethod slow progn ((rot rotator))
+  (mulv (spin rot) (friction rot)))
 
 ;;;collide
 
@@ -343,7 +330,7 @@ depends on the generic function #'CURRENT-VECTOR"
 
 ;;;soft
 
-(defclass soft (repeller) ((hardness :accessor hardness :initarg :hardness)))
+(defclass soft (repeller) ((hardness :accessor hardness :initarg :hardness :initform 1)))
 
 (defmethod repel-vector :around ((posa soft) (posd repeller))
   (v* (call-next-method) (hardness posa)))
@@ -359,6 +346,11 @@ depends on the generic function #'CURRENT-VECTOR"
    :axis (cross3 side roll)
    :angle (line-distance roll side)))
 
+(defun rotation-vector (rot side)
+  (v* (cross3 (unitvec side) rot)))
+
+
+#+nil ;;old ;)
 (defun rotation-vector (rot side)
   (let ((acc (rotation-angle rot)))
     (if (zerop acc)
@@ -400,7 +392,7 @@ depends on the generic function #'CURRENT-VECTOR"
 ;;;smooth
 
 (defclass smooth (roller)
-  ((roughness :accessor roughness :initarg :roughness)))
+  ((roughness :accessor roughness :initarg :roughness :initform 1)))
 
 (defmethod roll-vector :around ((rota roller) (rotd smooth))
   (v* (call-next-method) (roughness rotd)))
@@ -423,26 +415,26 @@ depends on the generic function #'CURRENT-VECTOR"
 (defmethod roll-vector :around ((posa physical) (posd physical))
   (v/ (call-next-method) (+ (mass posa) (mass posd))))
 
-#|
 ;;;gravity
 
 (defvar *gravity* 0)
 
 (defclass graviton (physical) ())
 
-(defmethod interact progn ((posa graviton) (posd graviton))
-  (accelerate2 posa posd (v* vec strength (/ (expt distance 3))) (mass posd) (mass posa)))
+(defmethod interact :before ((posa graviton) (posd graviton) &aux (vec (current-vector posa posd))
+                                                               (dis (absvec vec)))
+  (accelerate2 posa posd (v* vec *gravity* (/ (expt dis 3))) (mass posd) (mass posa)))
 
-|#
 
 ;;;scaled
 
 (defclass scaled (transformed)
   ((size :accessor size
          :initarg :size
+         :initform 1
          :type real)))
 
-(defmethod draw :before ((pos scaled) &aux (size (size pos)))
+(defmethod display :before ((pos scaled) &aux (size (size pos)))
   (gl:scale size size size))
 
 (defmethod roll-factor * ((self scaled) other)
@@ -455,19 +447,20 @@ depends on the generic function #'CURRENT-VECTOR"
 
 (defclass ball (scaled) ())
 
-(defmethod draw ((ball ball))
-  (gl:with-pushed-matrix
-    (draw-circle)
-    (gl:rotate 90 1 0 0)
-    (draw-circle)
-    (gl:rotate 90 0 1 0)
-    (draw-circle)))
-
-(defmethod roll-vector v+ (posa (posd ball))
-  (v- (rotation-vector (spin posa) (current-vector posa posd))))
+(defmethod display ((ball ball))
+  (let ((clg-gl::*circle-quality* (round (* 2 (sqrt (size ball))))))
+    (gl:with-pushed-matrix
+      (draw-circle)
+      (gl:rotate 90 1 0 0)
+      (draw-circle)
+      (gl:rotate 90 0 1 0)
+      (draw-circle))))
 
 (defmethod roll-vector v+ ((posa ball) posd)
-  (rotation-vector (spin posd) (current-vector posd posa)))
+  (v* (rotation-vector (spin posa) (current-vector posa posd)) (size posa)))
+
+(defmethod roll-vector v+ (posa (posd ball))
+  (v* (rotation-vector (spin posd) (current-vector posa posd)) (size posd)))
 
 (defmethod roll-vector v+ ((posa mover) mover)
   (v- (vel posa)))
@@ -476,39 +469,101 @@ depends on the generic function #'CURRENT-VECTOR"
   (vel posd))
 
 (defmethod roll :before ((posa mover) (posd mover) bs faca facd)
-  (accelerate2 posa posd (v* (cross3 (unitvec (current-vector posa posd)) bs))
+  (accelerate2 posa posd
+               (v* (rotation-vector bs (current-vector posd posa)))
                faca facd))
-
-
-;;;
-
-(defclass rotatable-ball (rotated rotating rollable ball) ())
-
-
-
 
 ;;;color
 
 (defclass colored ()
   ((color :accessor color :initform (list 1 1 1) :initarg :color)))
 
-(defmethod draw :around ((colored colored))
+(defmethod display :around ((colored colored))
   (gl:with-pushed-attrib (:current-bit)
     (apply #'gl:color (color colored))
     (call-next-method)))
-  
 
 
-;;;test
+;;camera
 
-(defclass test-ball (colored rotated ball) ())
+(defclass camera ()
+  ((draw-object :initarg :draw-object
+                :initarg :object)))
 
-(defmethod draw :after ((ball test-ball))
-  (gl:color 0 0 0)
-  (gl:with-primitive :lines
-    (gl:vertex 0 0 0)
-    (gl:vertex 1 0 0)))
+(defmethod display ((cam camera))
+  (with-slots (draw-object) cam
+    (display draw-object)))
 
+(defclass focusing (camera transformed)
+  ((focus-object :initarg :focus-object)))
+
+(defmethod display :before ((cam focusing))
+  (with-slots ((pos focus-object)) cam
+    (gl:translate (- (pos- pos 0))
+                  (- (pos- pos 1))
+                  (- (pos- pos 2)))))
+
+(defclass looking (camera transformed)
+  ((focus-object :initarg :focus-object)
+   (look-object :initarg :look-object)))
+
+(defmethod display :before ((cam looking))
+  (with-slots ((posa focus-object) (posd look-object)) cam
+    (rotate-with-rotation
+     (v- (rotation-to-vector #(0 0 1) (current-vector posa posd))))))
+
+(defclass looking2 (camera angled)
+  ((focus-object :initarg :focus-object)
+   (look-object :initarg :look-object)))
+
+
+(defmethod display :before ((cam looking2))
+  (with-slots ((posa focus-object) (posd look-object) rot) cam
+    (setf rot (v* (v- (rotation-to-vector (rotate-vector #(0 0 1) rot) (current-vector posa posd))) 2))))
+
+(defmethod display :after ((cam looking2))
+  (with-slots ((posa focus-object) (posd look-object) rot) cam
+    (setf rot (v- (v/ rot 2)))))
+
+(defclass looking3 (camera angled rotator)
+  ((focus-object :initarg :focus-object)
+   (look-object :initarg :look-object)))
+
+(defmethod act progn ((cam looking3))
+  (with-slots ((posa focus-object) (posd look-object) rot) cam
+    (incv rot (v/ (rotation-to-vector (rotate-vector #(0 0 1) rot) (current-vector posa posd)) 8))))
+
+(defmethod display :before ((cam looking3))
+  (with-slots ((posa focus-object) (posd look-object) rot) cam
+    (setf rot (v- rot))))
+
+(defmethod display :after ((cam looking3))
+  (with-slots ((posa focus-object) (posd look-object) rot) cam
+    (setf rot (v- rot))))
+
+;;cluster
+
+(defclass cluster ()
+  ((act-object :initarg :act-object
+               :initarg :object)))
+
+(defmethod act progn ((cl cluster))
+  (with-slots (act-object) cl
+    (act act-object)))
+
+(defclass solid-cluster (cluster) ())
+
+(defmethod act progn ((cl solid-cluster))
+  (dolist (ins (slot-value cl 'act-object))
+    (act ins)))
+
+(defclass gravity-cluster (cluster)
+  ((gravity :initarg :gravity)))
+
+(defmethod act :around ((cl gravity-cluster))
+  (with-slots (gravity) cl
+    (let ((*gravity* gravity))
+      (call-next-method))))
 
 #|
 #|
