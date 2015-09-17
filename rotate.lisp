@@ -7,6 +7,8 @@
            #:mulr
            #:rotate-vector
            #:rotation-to-vector
+           #:vector-rotation
+           #:rotation-vector
            ))
 
 (in-package #:clg-rot)
@@ -57,14 +59,12 @@
 (defun rotation-to-vector (front vector)
   (make-rotation :axis (cross3 front vector) :angle (angle front vector)))
 
-(defun trtv ()
-  (rotation-to-vector #(0 0 1)
-                      #(1 0 0)))
+(defun vector-rotation (roll side)
+  (make-rotation
+   :axis (cross3 side roll)
+   :angle (line-distance roll side)))
 
-(defun tmr ()
-  (let ((rot (make-rotation :angle 0 :axis #(0 0 0))))
-    (mulr rot (make-rotation :angle (* pi 1/2) :axis #(0 1 0)))
-    (mulr rot (make-rotation :angle (* pi 1/2) :axis #(0 0 1)))
-    (mulr rot (make-rotation :angle (* pi 1/2) :axis #(1 0 0)))
-    rot))
+(defun rotation-vector (rot side)
+  (v* (cross3 (unitvec side) rot)))
+
 

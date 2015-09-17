@@ -2,7 +2,7 @@
 a common lisp very easy estensible game engine
 
 two test-games avialble; start them with these expressions:
-  (clg:start 'clg::init-window 'clg::init-) ;;first game
+  (clg:start 'clg::init-window 'clg::init-planet) ;;first game
   (clg:start 'clg::init-window 'clg::init-cam 'clg::init-flyballs) ;;second game
 
 fist: control with arrow-keys or WASD

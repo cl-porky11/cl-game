@@ -1,5 +1,5 @@
 (defpackage #:clg-spat
-  (:use #:cl #:clg-util #:clg-vec #:clg-rot #:clg-gl #:alexandria)
+  (:use #:cl #:clg-util #:clg-vec #:clg-rot #:clg-sound #:clg-gl #:alexandria)
   (:import-from #:glut
                 #:display)
   (:export #:display
@@ -34,7 +34,7 @@
            #:single-touch-distance
            #:touch-distance
            #:current-vector
-           #:collide-factor
+           #:interact-factor
            #:current-distance
            #:check-collision
            #:collider
@@ -43,7 +43,6 @@
            #:repel-vector
            #:repel-factor
            #:distance-vector
-           #:edge-vector
            #:repeller
 
            #:soft
@@ -60,9 +59,7 @@
 
            #:physical
            #:mass
-
            #:*gravity*
-           #:graviton
 
            #:scaled
            #:size
@@ -72,47 +69,116 @@
 
            #:camera
            #:focusing
+           #:*front-vector*
            #:looking
            
            #:cluster
-           #:solid-cluster
+           #:interact-cluster
            #:gravity-cluster
-           ))
 
+           #:line
+           #:connection
+
+           #:last-collision
+           #:last-collider
+           ))
 (in-package #:clg-spat)
+
+;;;etc.
 
 (defmacro show (&rest vars)
   `(progn (format t ,(format nil "~{~a: ~~a~^; ~}~%" vars) ,@vars)
           (list ,@vars)))
 
+(define-method-combination single ()
+  ((primary (:single) :required t))
+  (if (cdr primary)
+      (method-combination-error
+       "More than one method was implemented for a method-combination of type single")
+      `(call-method ,(car primary))))
+
+(defun single-symbol-qualifier-p (list)
+  (destructuring-bind (symbol . rest) list
+    (and (symbolp symbol)
+         (not (eq (symbol-package symbol) (find-package symbol)))
+         (null rest))))
+
+(defun number-qualifier-p (list)
+  (destructuring-bind (car . cdr) list
+    (and (realp car)
+         (null cdr))))
+
+(define-method-combination numbered (operation &key (order :most-specific-first) (predicate #'<))
+  ((around (:around))
+   (primary ())
+   (methods number-qualifier-p :order order))
+  `(,operation
+    ,@(mapfun ((method primary)) `(call-method ,method))
+    ,@(mapcar (lambda (num)
+                (destructuring-bind
+                      (first . rest)
+                    (remove-if-not
+                     (lambda (method) (= num (car (method-qualifiers method))))
+                     methods)
+                  `(call-method ,first ,rest)))
+              (stable-sort (let (nums)
+                             (map nil (lambda (method)
+                                        (pushnew
+                                         (car (method-qualifiers method))
+                                         nums))
+                                  methods)
+                             nums)
+                           predicate))))
+#+nil
+(define-method-combination numbered (operation &key (order :most-specific-first) sort-by)
+  ((around (:around))
+   (methods single-symbol-qualifier-p :order order))
+  `(,operation
+     ,@(maphash
+        (lambda (key value)
+          (declare (ignore key))
+          (
+        (table-group methods :test 'eq :key (lambda (method)
+                                              (car (method-qualifiers method)))))))))
+  
+
+#+nil
+(define-method-combination progn+ (&key required (order :most-specific-first) (allow-around t))
+  ((primary (progn) :order order)
+   (around (:around) :order order))
+  (if (and required (null primary))
+      (method-combination-error "no primary method defined, but required"))
+  (if (and around (not allow-around))
+      (method-combination-error "around-methods are not allowed here"))
+  `(call-method (make-method ,@around (call-method ,@primary))))
+
+;;;default-methods
+
 (defmethod display (object))
 
 (defgeneric act (object)
   (:method-combination progn)
-  (:method progn (object)))
+  (:method progn (object) :most-specific-last))
 
 (defgeneric interact (objecta objectd)
-  (:method (a d)))
+  (:method-combination progn)
+  (:method progn (a d)))
 
 
-;;;default-methods
+(defmethod act progn ((object list))
+  (loop for (object . rest) on object
+     do (act object)
+     do (interact object rest)))
 
 (defmethod display ((objects list))
-  (dolist (object objects)
+  (dolist (object (reverse objects))
     (display object)))
 
-(defmethod act progn ((objects list))
-  (loop for (object . rest) on objects
-     do
-       (interact object rest)
-     do
-       (act object)))
-
-(defmethod interact ((actora list) actord)
+(defmethod interact :around ((actora list) actord)
   (dolist (actor actora)
     (interact actor actord)))
 
-(defmethod interact (actora (actord list))
+(defmethod interact :around (actora (actord list))
   (dolist (actor actord)
     (interact actora actor)))
 
@@ -133,7 +199,8 @@
 
 ;;;positions
 
-(defgeneric move (pos vector))
+(defgeneric move (pos vector)
+  (:method-combination single))
 
 (defclass positional (transformed)
   ((pos :accessor pos
@@ -147,13 +214,14 @@
 (defmethod display :before ((pos positional))
   (gl:translate (pos- pos 0) (pos- pos 1) (pos- pos 2)))
 
-(defmethod move ((pos positional) vector)
+(defmethod move :single ((pos positional) vector)
   (incv (pos pos) vector))
 
 
 ;;;movement
 
-(defgeneric accelerate (pos vector))
+(defgeneric accelerate (pos vector)
+  (:method-combination single))
 
 (defun accelerate2 (movera moverd acc &optional (faca 1) (facd (/ faca)))
   (accelerate movera (v* acc faca))
@@ -177,13 +245,14 @@
 (defmethod act progn ((mover mover))
   (move mover (vel mover)))
 
-(defmethod accelerate ((mover mover) vector)
+(defmethod accelerate :single ((mover mover) vector)
   (incv (vel mover) vector))
 
 
 ;;;angeled
 
-(defgeneric turn (object vector))
+(defgeneric turn (object vector)
+  (:method-combination single))
 
 (defclass angled (transformed)
   ((rot :accessor rot :initarg :rot :type rotation
@@ -194,13 +263,14 @@
     (rotate-with-rotation r)))
 
 
-(defmethod turn (angled rot)
+(defmethod turn :single (angled rot)
   (mulr (rot angled) rot)
   )
 
 ;;;rotator
 
-(defgeneric boost (rotating rot))
+(defgeneric boost (rotating rot)
+  (:method-combination single))
 
 (defun boost2 (rota rotd rot &optional (faca 1) (facd (/ faca)))
   (boost rota (v* rot faca))
@@ -211,11 +281,7 @@
   ((spin :accessor spin :initarg :spin
          :initform (make-rotation :angle 0 :axis #(0 0 1)))))
 
-(defmethod boost (rotator rot)
-  ;;(mulr (spin rotator) rot)
-  #+nil
-  (if (< (/ pi 2) (rotation-angle (spin rotator)))
-      (print :danger))
+(defmethod boost :single (rotator rot)
   (incv (spin rotator) rot)
   )
 
@@ -242,7 +308,7 @@
 ;;;collide
 
 (defgeneric collide (posa posd)
-  (:method-combination progn))
+  (:method-combination numbered progn))
 
 (defgeneric single-touch-distance (posa))
 
@@ -258,7 +324,7 @@
 (let ((*package* (find-package :cl))) 
   (define-method-combination * :identity-with-one-argument t))
 
-(defgeneric collide-factor (self other)
+(defgeneric interact-factor (self other)
   (:method-combination *)
   (:method * (self other) 1))
 
@@ -276,14 +342,14 @@ depends on the generic function #'CURRENT-VECTOR"
   (v- (pos posd) (pos posa)))
 
 
-(defmethod interact :before ((posa collider) (posd collider))
+(defmethod interact progn ((posa collider) (posd collider))
   (if (check-collision posa posd)
       (collide posa posd)))
 
 
 ;;;repel
 
-(defgeneric repel (posa posd acc faca facd))
+(defgeneric single-repel (posa posd acc faca facd))
 
 (define-method-combination v+ :identity-with-one-argument t)
 
@@ -294,39 +360,45 @@ depends on the generic function #'CURRENT-VECTOR"
 
 (defgeneric repel-factor (self other)
   (:method-combination *)
-  (:method * (self other) (collide-factor self other)))
+  (:method * (self other) (interact-factor self other)))
 
-(defun distance-vector (target vector
-                        &aux (distance (absvec vector)))
+(defun distance-factor (distance target)
+  (if (zerop distance)
+      0
+      (/ (- distance target) distance)))
+
+(defun factor-vector (vector fun &rest args)
+  (v* vector (apply fun (absvec vector) args)))
+
+(defun distance-vector (target vector)
   "Computes the minimal vector to "
-  (v* vector
-      (if (zerop distance)
-          0
-          (/ (- distance target) distance))))
-
-(defun edge-vector (posa posd)
-  (distance-vector (touch-distance posa posd)
-                   (current-vector posa posd)))
+  (factor-vector vector 'distance-factor target))
 
 (defclass repeller (collider) ())
 
 (defmethod repel-vector v+ ((posa collider) (posd collider))
-  (edge-vector posa posd))
+  (distance-vector (touch-distance posa posd)
+                   (current-vector posa posd)))
 
-(defmethod collide progn ((posa repeller) (posd repeller))
-  (repel posa posd (repel-vector posa posd) (repel-factor posa posd) (repel-factor posd posa)))
+(flet ((rep (posa posd)
+         (repel posa posd (repel-vector posa posd) (repel-factor posa posd) (repel-factor posd posa))))
+  (defmethod collide 1 ((posa collider) (posd repeller))
+             (rep posa posd))
+  (defmethod collide 1 ((posa repeller) (posd collider))
+             (rep posa posd)))
 
-(defmethod repel (posa posd acc faca facd)
-  (accelerate2 posa posd acc faca facd))
+(defmethod single-repel (posa posd acc faca facd))
 
-#+nil
-(defmethod repel ((posa repeller) posd acc)
-  (accelerate posa acc))
-#+nil
-(defmethod repel (posa (posd repeller) acc)
-  (accelerate posd (v- acc)))
+(defmethod single-repel ((posa repeller) posd acc faca facd)
+  (accelerate posa (v* acc (+ faca facd))))
 
-;;(defmethod repel (
+(defmethod single-repel ((posa repeller) (posd repeller) acc faca facd)
+  (accelerate posa (v* acc faca)))
+
+(defun repel (posa posd acc faca facd)
+  (single-repel posa posd acc faca facd)
+  (single-repel posd posa (v- acc) facd faca))
+
 
 ;;;soft
 
@@ -341,52 +413,48 @@ depends on the generic function #'CURRENT-VECTOR"
 
 ;;;rolling
 
-(defun vector-rotation (roll side)
-  (make-rotation
-   :axis (cross3 side roll)
-   :angle (line-distance roll side)))
-
-(defun rotation-vector (rot side)
-  (v* (cross3 (unitvec side) rot)))
-
-
-#+nil ;;old ;)
-(defun rotation-vector (rot side)
-  (let ((acc (rotation-angle rot)))
-    (if (zerop acc)
-        (vector-of 'real 0 0 0)
-        (let* ((vec (rotation-axis rot))
-               (dir (cross3 vec side))
-               (abs (absvec dir))
-               (fac (sin (angle vec side))))
-          (if (or (zerop abs) (zerop fac))
-              (vector-of 'real 0 0 0)
-              (v* (v/ dir abs) fac acc))))))
-
-(defun vrv (vector side)
-  (vector-rotation (rotation-vector vector side) side))
-
 (defgeneric roll (rota rotd bs faca facd))
 
-(defgeneric roll-vector (rota rotd)
-  (:method-combination v+))
+(defgeneric single-roll-vector (self other vector dis)
+  (:method-combination v+)
+  (:method v+ (self other vector dis) (vector 0 0 0)))
 
-(defgeneric roll-rotation (rota rotd)
-  (:method (rota rotd)
-    (vector-rotation (roll-vector rota rotd)
-                     (current-vector rota rotd))))
+(defun roll-vector (rota rotd vector disa disd)
+  (v- (single-roll-vector rota rotd vector disa)
+      (single-roll-vector rotd rota (v- vector) disd)))
+
+(defgeneric roll-rotation (rota rotd vector disa disd)
+  (:method (rota rotd vector disa disd)
+    (vector-rotation (roll-vector rota rotd vector disa disd)
+                     vector)))
 
 (defgeneric roll-factor (self other)
   (:method-combination *)
-  (:method * (self other) (collide-factor self other)))
-
-(defmethod roll (rota rotd bs faca facd)
-  (boost2 rota rotd bs faca facd))
+  (:method * (self other) (interact-factor self other)))
 
 (defclass roller (collider) ())
 
-(defmethod collide progn ((rota roller) (rotd roller))
-  (roll rota rotd (roll-rotation rota rotd) (roll-factor rota rotd) (roll-factor rotd rota)))
+(defmethod single-roll (rota rotd bs faca facd))
+
+(defmethod single-roll ((rota roller) rotd bs faca facd)
+  (boost rota (v* bs (+ faca facd))))
+
+(defmethod single-roll ((rota roller) (rotd roller) bs faca facd)
+  (boost rota (v* bs faca)))
+
+(defmethod roll (rota rotd bs faca facd)
+  (single-roll rota rotd bs faca facd)
+  (single-roll rotd rota bs facd faca))
+
+(flet ((ro (rota rotd)
+         (roll rota rotd (roll-rotation rota rotd (current-vector rota rotd)
+                                        (single-touch-distance rota)
+                                        (single-touch-distance rotd))
+               (roll-factor rota rotd) (roll-factor rotd rota))))
+  (defmethod collide 2 ((rota roller) (rotd collider))
+             (ro rota rotd))
+  (defmethod collide 2 ((rota collider) (rotd roller))
+             (ro rota rotd)))
 
 
 ;;;smooth
@@ -394,11 +462,11 @@ depends on the generic function #'CURRENT-VECTOR"
 (defclass smooth (roller)
   ((roughness :accessor roughness :initarg :roughness :initform 1)))
 
-(defmethod roll-vector :around ((rota roller) (rotd smooth))
-  (v* (call-next-method) (roughness rotd)))
+(defmethod roll-factor * ((self smooth) other)
+  (roughness self))
 
-(defmethod roll-vector :around ((rota smooth) (rotd roller))
-  (v* (call-next-method) (roughness rota)))
+(defmethod roll-factor * (self (other smooth))
+  (roughness other))
 
 
 ;;;mass
@@ -406,24 +474,56 @@ depends on the generic function #'CURRENT-VECTOR"
 
 (defclass physical () ((mass :accessor mass :initarg :mass)))
 
-(defmethod collide-factor * ((posa physical) (posd physical))
-  (mass posd))
+(defmethod interact-factor * ((posa physical) (posd physical))
+  (/ (mass posd) (+ (mass posa) (mass posd))))
 
-(defmethod repel-vector :around ((posa physical) (posd physical))
-  (v/ (call-next-method) (+ (mass posa) (mass posd))))
 
-(defmethod roll-vector :around ((posa physical) (posd physical))
-  (v/ (call-next-method) (+ (mass posa) (mass posd))))
+;;gravity
 
-;;;gravity
+(defgeneric single-attract (posa posd acc faca facd))
+
+(defgeneric attract-factor (self other)
+  (:method-combination *)
+  (:method * (self other)
+    (interact-factor self other)))
+
+(defgeneric attract-vector (posa posd vector))
 
 (defvar *gravity* 0)
 
-(defclass graviton (physical) ())
+(defclass faller () ())
 
-(defmethod interact :before ((posa graviton) (posd graviton) &aux (vec (current-vector posa posd))
-                                                               (dis (absvec vec)))
-  (accelerate2 posa posd (v* vec *gravity* (/ (expt dis 3))) (mass posd) (mass posa)))
+(defun attract (posa posd acc faca facd)
+  #+nil
+  (if (< 16 (mass posd))
+      (show acc))
+  (single-attract posa posd acc faca facd)
+  (single-attract posd posa (v- acc) facd faca))
+
+(defmethod interact progn ((posa physical) (posd physical))
+  (unless (zerop *gravity*)
+    (attract posa posd (attract-vector posa posd (current-vector posa posd))
+             (attract-factor posa posd) (attract-factor posd posa))))
+
+(defun gravity-factor (distance factor power)
+  (* factor (expt distance power)))
+
+(defmethod attract-factor * (self (other physical))
+  (mass other))
+
+(defmethod attract-vector (posa posd vector)
+  (factor-vector vector 'gravity-factor *gravity* -3))
+
+(defmethod single-attract ((posa physical) (posd physical) acc faca facd)
+  #+nil
+  (if (< 16 (mass posd))
+      (show acc faca facd))
+  (accelerate posa (v* acc faca)))
+
+(defmethod single-attract ((posa physical) posd acc faca facd)
+  (accelerate posa (v* acc (+ faca facd))))
+
+(defmethod single-attract (posa posd acc faca facd))
 
 
 ;;;scaled
@@ -438,40 +538,44 @@ depends on the generic function #'CURRENT-VECTOR"
   (gl:scale size size size))
 
 (defmethod roll-factor * ((self scaled) other)
-  (/ (size self)))
+  (/ (single-touch-distance self)))
 
 (defmethod single-touch-distance ((ball scaled))
   (size ball))
 
+
 ;;;ball
 
-(defclass ball (scaled) ())
+(defclass ball () ())
 
 (defmethod display ((ball ball))
-  (let ((clg-gl::*circle-quality* (round (* 2 (sqrt (size ball))))))
+  ;;  (let ((clg-gl::*circle-quality* (round (* 2 (sqrt (size ball))))))
     (gl:with-pushed-matrix
       (draw-circle)
       (gl:rotate 90 1 0 0)
       (draw-circle)
       (gl:rotate 90 0 1 0)
-      (draw-circle))))
+      (draw-circle)));)
 
-(defmethod roll-vector v+ ((posa ball) posd)
-  (v* (rotation-vector (spin posa) (current-vector posa posd)) (size posa)))
+(defmethod single-roll-vector v+ ((self rotator) other vector dis)
+  (v* (rotation-vector (spin self) vector) dis))
 
-(defmethod roll-vector v+ (posa (posd ball))
-  (v* (rotation-vector (spin posd) (current-vector posa posd)) (size posd)))
+(defmethod single-roll-vector v+ ((self mover) other vector dis)
+  (v- (vel self)))
 
-(defmethod roll-vector v+ ((posa mover) mover)
-  (v- (vel posa)))
+#+nil
+(defmethod roll :before (posa posd bs faca facd)
+  #+nil
+  (if (< 16 (mass posd))
+      (show bs))
+  (repel posa posd
+         (rotation-vector bs (current-vector posd posa))
+         faca facd))
 
-(defmethod roll-vector v+ (posa (posd mover))
-  (vel posd))
+(defmethod single-roll :before (posa posd bs faca facd)
+  (accelerate posa
+              (v* (rotation-vector bs (current-vector posd posa)) faca)))
 
-(defmethod roll :before ((posa mover) (posd mover) bs faca facd)
-  (accelerate2 posa posd
-               (v* (rotation-vector bs (current-vector posd posa)))
-               faca facd))
 
 ;;;color
 
@@ -503,14 +607,59 @@ depends on the generic function #'CURRENT-VECTOR"
                   (- (pos- pos 1))
                   (- (pos- pos 2)))))
 
-(defclass looking (camera transformed)
+(defvar *front-vector* (vector 0 0 1))
+
+(defclass looking (camera transformed) 
   ((focus-object :initarg :focus-object)
    (look-object :initarg :look-object)))
 
 (defmethod display :before ((cam looking))
   (with-slots ((posa focus-object) (posd look-object)) cam
     (rotate-with-rotation
-     (v- (rotation-to-vector #(0 0 1) (current-vector posa posd))))))
+     (v- (rotation-to-vector *front-vector* (current-vector posa posd))))))
+
+
+;;mesh
+
+#+nil
+(defclass mesh ()
+  (vertices
+   indices))
+
+#+nil
+(defmethod initialize-instance :after ((mesh mesh) &key new-vertices new-indices)
+  (with-slots (vertices indices) mesh
+    (setf vertices (gl:alloc-gl-array :float (length new-vertices)))
+    (setf indices (gl:alloc-gl-array :unsigned-short (length new-indices)))))
+
+#+nil
+(defmethod display ((mesh mesh))
+  (with-slots (vertices indices) mesh))
+    
+    
+;;(make-array 9 :displaced-to #2a((1 2 3) (4 5 6) (7 8 9)))
+
+
+#|
+    
+(defclass looking4 (camera angled)
+  ((focus-object :initarg :focus-object)
+   (look-object :initarg :look-object)))
+
+(defmethod act :around ((cam looking4))
+  (with-slots ((posa focus-object) (posd look-object) rot) cam
+    (let ((new-front (current-vector posa posd)))
+      (setf rot (rotation-to-vector *front-vector* new-front))
+      (let ((*front-vector* new-front))
+        (call-next-method)))))
+
+(defmethod display :before ((cam looking4))
+  (with-slots ((posa focus-object) (posd look-object) rot) cam
+    (mulv rot -1)))
+
+(defmethod display :after ((cam looking4))
+  (with-slots ((posa focus-object) (posd look-object) rot) cam
+    (mulv rot -1)))
 
 (defclass looking2 (camera angled)
   ((focus-object :initarg :focus-object)
@@ -541,6 +690,9 @@ depends on the generic function #'CURRENT-VECTOR"
   (with-slots ((posa focus-object) (posd look-object) rot) cam
     (setf rot (v- rot))))
 
+|#
+
+
 ;;cluster
 
 (defclass cluster ()
@@ -549,13 +701,16 @@ depends on the generic function #'CURRENT-VECTOR"
 
 (defmethod act progn ((cl cluster))
   (with-slots (act-object) cl
-    (act act-object)))
+    (dolist (ins (ensure-list act-object))
+      (act ins))))
 
-(defclass solid-cluster (cluster) ())
+(defclass interact-cluster (cluster) ())
 
-(defmethod act progn ((cl solid-cluster))
-  (dolist (ins (slot-value cl 'act-object))
-    (act ins)))
+(defmethod act progn ((cl interact-cluster))
+  (with-slots (act-object) cl
+    (if (consp act-object)
+        (loop for (object . rest) on act-object
+           do (interact object rest)))))
 
 (defclass gravity-cluster (cluster)
   ((gravity :initarg :gravity)))
@@ -565,64 +720,43 @@ depends on the generic function #'CURRENT-VECTOR"
     (let ((*gravity* gravity))
       (call-next-method))))
 
-#|
-#|
-
-(defclass connected (mover)
-  ((line-acc :initform nil :accessor line-acc)
-   (line-num :initform 0 :accessor line-num)))
-
-(defmethod accelerate ((pos connected) vector)
-
-(defun line-accelerate
-  (if (line-acc pos)
-    (incf (line-acc pos) vector)
-    (setf (line-acc pos) vector)))
-  
-(defmethod act :after ((pos connected))
-  
-|#
 
 ;;;line
 
 (defclass line ()
-  ((posa :initarg :posa :type 'positional)
-   (posd :initarg :posd :type 'positional)))
+  ((pos0 :initarg :pos0)
+   (pos1 :initarg :pos1)))
 
-(defmethod collide ((linea line) (lined line))
-  (with-slots (posa posd) linea
-    ()))
-
-(defmethod draw ((line line))
-  (with-slots (posa posd) line
-    (draw-line (pos posa) (pos posd))))
+(defmethod display ((line line))
+  (with-slots (pos0 pos1) line
+    (draw-line (pos pos0) (pos pos1))))
 
 (defmethod single-touch-distance ((line line))
   0)
 
 
-
 (flet ((vec (pos line)
-         (with-slots (posa posd) line
-           (let* ((vals (list (pos posd) (v- (pos posa) (pos posd)) (pos pos)))
-                  (fac (apply #'orthogonal-length vals)))
+         (with-slots (pos0 pos1) line
+           (let* ((vec (current-vector pos0 pos1))
+                  (fac (orthogonal-factor (pos pos) vec)))
              (if (<= 0 fac 1)
-                 (apply #'line-vector vals)
+                 (line-vector (pos pos) vec)
                  (if (< fac 0)
-                     (v- (pos posd) (pos pos))
-                     (v- (pos posa) (pos pos))))))))
+                     (current-vector pos1 pos)
+                     (current-vector pos0 pos)))))))
   (defmethod current-vector ((pos positional) (line line))
     (vec pos line))
   (defmethod current-vector ((line line) (pos positional))
     (v- (vec pos line))))
 
+(defmethod accelerate :single ((line line) acc)
+  (with-slots (pos0 pos1) line
+    (accelerate pos0 acc)
+    (accelerate pos1 acc)))
 
-(defmethod accelerate ((line line) acc)
-  (with-slots (posa posd) line
-    (let ((acc (v/ acc 2)))
-      (accelerate posa acc)
-      (accelerate posd acc))))
+;(defmethod repel-factor ((line line)
 
+#+nil
 (flet ((acc2 (pos line)
          (with-slots (posa posd) line
            (if-let ((acc (compute-acceleration line pos)))
@@ -635,9 +769,9 @@ depends on the generic function #'CURRENT-VECTOR"
                  (if (< fac 0)
                    (accelerate posa acc)
                    (accelerate posd acc))))))))
-  (defmethod collide ((pos collider) (line line))
+  (defmethod collide 3 ((pos collider) (line line))
     (acc2 pos line))
-  (defmethod collide ((line line) (pos collider))
+  (defmethod collide 3 ((line line) (pos collider))
     (acc2 pos line)))
 
 ;;;connection
@@ -646,57 +780,68 @@ depends on the generic function #'CURRENT-VECTOR"
   ((length :initarg :length :type real)
    (strength :initarg :strength :initform 1 :type real)))
 
-(defmethod act ((connection connection))
-  (with-slots (posa posd length strength) connection
-    (let ((acc (v* (relative-vector length (v- (pos posd) (pos posa))) strength)))
-      (accelerate2 posa acc))))
+(defmethod act progn ((connection connection))
+  (with-slots (pos0 pos1 length strength) connection
+    (repel pos0 pos1 (v* (distance-vector length (current-vector pos0 pos1)) strength)
+           (repel-factor pos0 pos1)
+           (repel-factor pos1 pos0))))
+
+;;;
+
+(defclass hard (line)
+  ((strength :initarg :strength :initform 1 :type real)))
+
+#+nil
+(defmethod act progn ((line hard))
+  (with-slots (pos0 pos1 strength) line
+    (let* ((vector (current-vector pos0 pos1))
+           (dis (absvec vector))
+           (vec0 (rotation-vector (spin pos0) vector))
+           (vec1 (rotation-vector (spin pos1) vector))
+           (fac0 (/ (absvec vec0) dis))
+           (fac1 (/ (absvec vec1) dis))
+           (roll-vec (+ (v* vec0 dis) (v* vec1 dis)
+      (roll pos0 pos1 (v* (vector-rotation () vector)
+                          strength)
+            1 1)))))))
+            
+
+;;;last-collision
+
+(defclass last-collision (collider)
+  ((last-collider :initform nil)))
+
+(flet ((set-last-collider (col other)
+         (with-slots (last-collider) col
+           (setf last-collider other))))
+  (defmethod collide  ((col last-collision) (other collider))
+             (set-last-collider col other))
+  (defmethod collide 0 ((other collider) (col last-collision))
+             (set-last-collider col other)))
 
 
-;;;start
 
-(defun create (class &rest init-args)
-  (create-instance class *objects* init-args))
+(defclass sounding ()
+  ((frequency :initarg :frequency :initform nil)))
 
-(defun run ()
-  (act *objects*))
+(defmethod initialize-instance :after ((sounding sounding) &key)
+  (with-slots (frequency) sounding
+    (if frequency
+        (let ((streamer (make-function-streamer (sinus-sound-function frequency 1/4))))
+          (start-sound streamer)
+          (tg:finalize sounding
+                       (lambda () (stop-sound streamer)))))))
 
-(defun display ()
-  (draw *objects*))
-
+#|
 
 ;;;
 
 ;;;test
 
-(defclass test-ball (mover ball collider colored) ())
-
-(defmethod print-object ((ball test-ball) stream)
-  (print-unreadable-object (ball stream :type ball)
-    (format stream "pos: ~a; vel: ~a" (pos ball) (vel ball))))
-
-(defmethod act ((ball test-ball)))
-
-(defclass bridge (connection collider colored) ())
-
 (defclass accelerator () ((acc :accessor acc :initarg :acc)))
 
 (defmethod* interact ((acc accelerator) (pos positional))
   (accelerate pos (acc acc)))
-
-(defclass re () ((re :accessor re :initarg :re)))
-
-(defmethod* interact ((re re) (pos mover))
-  (mulv (vel pos) (re re)))
-
-
-
-#+nil
-(defmethod draw :before ((pos test-ball))
-  (dolist (o *objects*)
-    (ignore-errors
-      (if-let ((v (current-vector pos o)))
-        (draw-line (pos pos) (v+ (pos pos) v))))))
-
 
 (define-modify-macro mulf (value) *)
 
@@ -854,8 +999,6 @@ depends on the generic function #'CURRENT-VECTOR"
               (t (sdl2:push-quit-event)))))
           (finish-output)))))
 
-;(defmethod interact ((balla test-ball) (balld test-ball)))
-
 
 
 ;(loop repeat 256 do (progn (print :running) (sleep 1/32) (run)))
@@ -863,32 +1006,6 @@ depends on the generic function #'CURRENT-VECTOR"
 ;(start)
 
 ;;;rest
-
-#+nil
-(defmethod* interact ((world world) (person person))
-  (accelerate person (gravity world)))
-
-#+nil
-(defclass world-line (line)
-  (positionals))
-
-#+nil
-(defmethod* interact ((person person) (world-line world-line)))
-
-
-
-;;;physical
-
-
-(defvar *gravity* 0)
-
-#+nil
-(defun gravity (movera moverd
-                &key
-                  (strength 1)
-                  (vec (v- (pos movera) (pos moverd)))
-                  (distance (absvec vec)))
-  (accelerate2 movera moverd (v* vec strength (/ (expt distance 3))) (/ (mass moverd) (mass movera))))
 
 #+nil
 (defmethod interact ((physicala physical) (physicald physical))
@@ -914,41 +1031,6 @@ depends on the generic function #'CURRENT-VECTOR"
 
 
 
-;;;actors
-
-(defclass actor ()
-  ((action :accessor action :initarg :action :type (or function null))))
-
-(defmethod act :before ((actor actor))
-  (if (action actor)
-    (funcall (action actor) actor)))
-
-(defmethod act ((actor actor)))
-
-(defun combine-actions (first second actor)
-  (declare (type (or function null) first second) (type actor actor))
-  (if first
-    (funcall first actor)
-    (unless (action actor)
-      (setf (action actor) second))))
-
-(defun act-before (actor function)
-  (setf (action actor) (lambda (entity) (combine-actions function (action actor) entity))))
-
-(defun act-after (actor function)
-  (setf (action actor) (lambda (entity) (combine-actions (action actor) function entity))))
-
-;;;persons
-
-(defclass person (mover actor)
-  ((acc :reader acc :initarg :acc :type number)))
-
-(defmethod move-to ((person person) (where positional))
-  (act-before person
-    (lambda (person)
-      (accelerate-to person where (acc person)))))
-
-
 ;;;specialized
 
 
@@ -968,20 +1050,25 @@ depends on the generic function #'CURRENT-VECTOR"
 
 |#
                     
+#|
+
+(defclass connected (mover)
+  ((line-acc :initform nil :accessor line-acc)
+   (line-num :initform 0 :accessor line-num)))
+
+(defmethod accelerate ((pos connected) vector)
+
+(defun line-accelerate
+  (if (line-acc pos)
+    (incf (line-acc pos) vector)
+    (setf (line-acc pos) vector)))
+  
+(defmethod act :after ((pos connected))
+  
+|#
+
 
 ;;;generics*
 
-(defgeneric move-to (who where))
-
-(defgeneric action (actor))
-
-(defmethod act (actor))
-
-
-
- (defmacro define-printer (name class text &rest options
-                                   &aux (object (gensym "OBJECT")))
-           `(defmethod ,name ,@options ((,object ,class))
-                       (princ ,text)))
-                             
 |#
+

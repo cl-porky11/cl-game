@@ -1,0 +1,11 @@
+OpenCL
+CUDA
+Thrust
+
+minimize opengl-commands
+
+VAO/VBO instead of gl:with-primitives
+
+display lists
+
+strippling

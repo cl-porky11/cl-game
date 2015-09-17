@@ -62,11 +62,11 @@
     (setq *height* height))
 
 (defmethod glut:display-window :before ((w window))
-  (gl:clear-color 1 1 1 0))
+  (gl:clear-color 1 1 1 0)
+  (gl:ortho -2 2 -2 2 -2 2))
 
 (defmethod glut:display :before ((w window))
-  (gl:clear :color-buffer)
-  (gl:ortho -1 1 -1 1 -1 1))
+  (gl:clear :color-buffer))
 
 (defparameter *angle* 0)
 

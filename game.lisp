@@ -1,7 +1,8 @@
 (defpackage #:cl-game
   (:nicknames #:clg)
-  (:use #:cl #:clg-util #:clg-vec #:clg-rot #:clg-spat #:clg-win #:clg-in #:quat #:alexandria #:bordeaux-threads)
+  (:use #:cl #:clg-util #:clg-vec #:clg-rot #:clg-act #:clg-spat #:clg-win #:clg-in #:alexandria #:bordeaux-threads)
   (:export #:start
+           #:example
            ))
 (in-package #:clg)
 
@@ -16,8 +17,9 @@ only start is external in this package
 
 (defclass test-ball (positional mover ball
                                 scaled colored angled
-                                rotator soft roller
-                                breaker graviton)
+                                rotator soft smooth
+                                breaker physical
+                                actor last-collision)
   ()
   (:default-initargs :friction 63/64))
 
@@ -28,6 +30,15 @@ only start is external in this package
   (read))
 
 
+(defun acc-action (other acc)
+  (lambda (self &aux (vec (v* (unitvec (current-vector self other)) acc)))
+    (accelerate self vec)))
+
+(defun boost-action (other fac &optional (dis 256))
+  (lambda (self &aux (rot (v* (unitvec (rotation-to-vector (pos self) (pos other))) 2 pi fac)))
+    (with-slots (last-collider) self
+      (if (< (current-distance self other) dis)
+          (boost self rot)))))
 
 #+nil
 (defun init-def (arg)
@@ -80,39 +91,84 @@ only start is external in this package
     cam))
 
 (defun init-planet ()
-  (let ((size 2048))
-    (let ((object (make-instance 'test-ball :hardness 1/2
-                                 :pos (vector 0 0 size) :size 16 :mass 1 :color '(1 0 0)))
-          (planet (make-instance 'test-ball
-                                 :hardness 1/2
-                                 :size size
-                                 :mass (expt size 3)
-                                 :spin (make-rotation :axis #(1 1 16) :angle (/ pi 32))
-                                 :color '(0 0 1)))
-          (rest (mappend (lambda (arg)
-                           (let* ((ang (* (/ pi 4) arg))
-                                  (cos (cos ang))
-                                  (sin (sin ang)))
-                             (list
-                              (make-instance 'test-ball
-                                             :color '(0 1 1)
-                                             :mass 16
-                                             :size 64
-                                             :pos (vector (* size cos) (* size sin) 0))
-                              (make-instance 'test-ball
-                                             :color '(0 1 0)
-                                             :mass 1
-                                             :size 16
-                                             :pos (vector (* 128 cos) (* 128 sin) size)
-                                             :spin (make-rotation :angle (* pi 1/4)
-                                                                  :axis (vector sin (- cos) 0))))))
-                         (iota 8))))
+  (let ((size 768))
+    (let* ((object (make-instance 'test-ball ;'(positional mover angled rotator colored scaled ball)
+                                  :hardness 1/2
+                                  :pos (vector 0 0 size) :size 16
+                                  :mass 1
+                                  :color '(1 0 0)))
+           #+nil
+           (planet (make-instance '(positional ball collider physical colored)
+                                  :pos (vector 0 0 0)
+                                  :color '(0 0 1)
+                                  :size size
+                                  :mass (expt size 3)))
+           (planet (make-instance 'test-ball
+                                  :hardness 1/16
+                                  :roughness 1
+                                  :size size
+                                  :mass (expt size 3)
+                                  :spin (make-rotation :axis #(1 1 16) :angle (/ pi 32))
+                                  :color '(0 0 1 1/2)))
+           (rest (append
+                  (mappend (lambda (arg)
+                             (let* ((ang (* (/ pi 4) arg))
+                                    (cos (cos ang))
+                                    (sin (sin ang)))
+                               (list
+                                (make-instance 'test-ball
+                                               :action (boost-action object 1/64 512)
+                                               :color '(0 1 1)
+                                               :mass 16
+                                               :size 64
+                                               :roughness 1/4
+                                               :pos (vector (* size cos) (* size sin) 0))
+                                (make-instance 'test-ball
+                                               :action (boost-action object -1/16)
+                                               :color '(0 1 0)
+                                               :mass 1
+                                               :size 16
+                                               :pos (vector (* cos size 1/4) (* sin size 1/4) size)
+                                               #+nil :spin #+nil(make-rotation :angle (* pi 1/4)
+                                                                    :axis (vector sin (- cos) 0))))))
+                           (iota 8))
+                  (mappend (lambda (arg)
+                             (let* ((ang (* (/ pi 4) arg))
+                                    (cos (cos ang))
+                                    (sin (sin ang))
+                                    (pos (v* (vector cos sin 2) (/ size 2)))
+                                    (list nil))
+                               (map nil
+                                    (lambda (arg)
+                                      (let* ((ang (* (/ pi 2) arg))
+                                             (cos (cos ang))
+                                             (sin (sin ang))
+                                             (pos (v+ pos (v* (vector cos sin 0) 64))))
+                                        (push
+                                         (make-instance 'test-ball
+                                                        :mass 1/4
+                                                        :color '(1 1 0)
+                                                        :size 16
+                                                        :pos pos)
+                                         list)))
+                                    (iota 4))
+                               (loop for (ball . rest) on list
+                                  do (dolist (b rest)
+                                       (push (make-instance '(colored connection #+nil clg-spat::hard)
+                                                            :color '(0 0 0)
+                                                            :pos0 ball
+                                                            :pos1 b
+                                                            :length 128
+                                                            :strength 1/8)
+                                             list)))
+                               list))
+                           (iota 8)))))
       (let ((ins
-             (make-instance '(gravity-cluster looking)
+             (make-instance '(gravity-cluster interact-cluster looking)
                             :gravity (/ size)
                             :look-object object
                             :focus-object planet
-                            :object (list object planet rest))))
+                            :object (list* planet object rest))))
         (let ((fac 4))
           (flet ((vec (x y z)
                    (rotate-vector (vector x y z)
@@ -159,15 +215,14 @@ only start is external in this package
 (defun start (&rest init-funs)
   (glut:display-window (funcall (apply #'compose init-funs))))
 
-(defmethod act progn ((ball test-ball))
-  #+nil
-  (let ((z (- (pos- ball 2) (size ball))))
-    (if (< z 0)
-        (accelerate ball (vector 0 0 (- z)))
-        (accelerate ball (vector 0 0 -1))))
-  #+nil
-  (accelerate ball (v* (unitvec (pos ball)) -4)))
+(defun example ()
+  (start 'init-window 'init-planet))
 
+#+nil
+(defmethod act progn ((ball test-ball))
+  (with-slots ((freq clg-spat::frequency) spin size) ball
+    (if freq
+        (setf freq (+ (* freq (/ (1- size) size)) (/ (rotation-angle spin)))))))
 
 
 

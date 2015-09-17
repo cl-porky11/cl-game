@@ -1,0 +1,24 @@
+re-add lines (maybe they would already work)
+
+add sound
+
+optimize-everything using mop and new collection-objects and -methods maybe
+
+generic functions for 3d-rotation may be not general enough for most things
+
+adding different types of rotations? (2D, 3D (quaternion-like), 3D (yaw/pitch/etc.), moreD)
+
+more binary methods (interact/collide/repel/etc.) for different classes
+
+maybe new types of generic functions for binays methods
+(will only work if #<method interact (x y)> and #<method interact (y x)> do the same or have some constant difference)
+
+new subsystems for modelling plots, conversations and persons
+plots with something like petri nets?
+conversations should be writable like dramas are written
+  (p1:"bla" p2,sad:"..." p1,goes)
+persons?
+
+
+learn about common technics used for games/engines and varjo or glsl
+
