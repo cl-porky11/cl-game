@@ -7,7 +7,8 @@
 
 
 (defclass window (glut:window camera cluster) ()
-  (:default-initargs :width 1280 :height 768 :resizable t :fps 32 :mode '(:double :rgb :multisample :depth)))
+  (:default-initargs :width 1280 :height 768 :resizable t :fps 32
+                     :mode '(:double :rgb :multisample :depth)))
 
 (defmethod initialize-instance :after ((win window) &key fps)
   (with-slots (glut::tick-interval) win
@@ -30,7 +31,7 @@
 
 (defmethod glut:display-window :before ((win window))
   (reset-keys)
-  (gl:clear-color 0 0 0 1/2)
+  (gl:clear-color 1 1 1 0)
   (gl:color 0 0 0)
   (gl:enable :depth-test)
   ;;(gl:enable :blend)

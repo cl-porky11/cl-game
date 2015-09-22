@@ -203,7 +203,11 @@ only start is external in this package
                            (iota 256)))))
 
 (defun init-tex ()
-  (make-instance 'textured :image-file "lisplogo_fancy_256.png"))
+  (make-instance '(angled rotator breaker textured)
+                 :friction 255/256
+                 :spin (make-rotation :angle (/ pi 8)
+                                      :axis #(0 1 0))
+                 :image-file "lisplogo_fancy_256.png"))
 
 (defun init-window (next)
   (make-instance 'window :fps 32

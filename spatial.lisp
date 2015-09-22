@@ -592,23 +592,10 @@ depends on the generic function #'CURRENT-VECTOR"
     (call-next-method)))
 
 (defclass textured ()
-  (texture height width (image-file :initarg :image-file)))
-
-#+nil
-(defun load-texture (file &optional (format :luminance))
-  (let* ((texture (car (gl:gen-textures 1)))
-         (image (read-png-file file)))
-    (gl:bind-texture :texture-2d texture)
-    (gl:tex-parameter :texture-2d :texture-min-filter :linear)
-    (gl:tex-image-2d :texture-2d 0 :rgba
-                     (width image) (height image)
-                     0 format
-                     :unsigned-byte (let* ((vec (subvector (image-data image)))
-                                           (arr (make-array (/ (length vec) 4))))
-                                      (dotimes (i (length arr))
-                                        (setf (aref arr i) (aref vec (* i 4))))
-                                      arr))
-    (values texture (width image) (height image))))
+  ((texture :initform nil)
+   (height :initform nil)
+   (width :initform nil)
+   (image-file :initarg :image-file)))
 
 (defun load-texture (filename &optional (texture-id (car (gl:gen-textures 1))
                                                     texture-id-p))
@@ -616,7 +603,7 @@ depends on the generic function #'CURRENT-VECTOR"
            (with-open-file (in filename
                                :element-type '(unsigned-byte 8))
              (png:decode in))))
-    (unwind-protect
+    (handler-case
         (let ((png (load-and-decode filename)))
           (assert png)
           (gl:bind-texture :texture-2d texture-id)
@@ -662,13 +649,9 @@ depends on the generic function #'CURRENT-VECTOR"
               (gl:tex-parameter :texture-2d :texture-min-filter :linear)
               (gl:tex-parameter :texture-2d :texture-mag-filter :linear))
             (values texture-id ww hh)))
-      (unless texture-id-p
-        (gl:delete-textures (list texture-id))))))
-
-(defmethod initialize-instance :after ((textured textured) &key image-file)
-  (print image-file)
-  (with-slots (texture width height) textured
-    (multiple-value-setq (texture width height) (values nil nil nil) #+nil (load-texture image-file))))
+      (error ()
+          (unless texture-id-p
+            (gl:delete-textures (list texture-id)))))))
 
 (defmethod display ((textured textured))
   (with-slots (texture height width image-file) textured
@@ -676,16 +659,16 @@ depends on the generic function #'CURRENT-VECTOR"
       (gl:enable :texture-2d)
       (multiple-value-setq (texture width height) (load-texture image-file)))
     (gl:bind-texture :texture-2d texture)
-    (gl:color 1 1 1)
+    (gl:color 1 1 1 0)
     (gl:with-primitive :quads
       (gl:tex-coord 0.0 1.0)
-      (gl:vertex (- width) (- height) 0)
+      (gl:vertex (- width) (+ height) 0)
       (gl:tex-coord 1.0 1.0)
-      (gl:vertex  width (- height) 0)
+      (gl:vertex  width (+ height) 0)
       (gl:tex-coord 1.0 0.0)
-      (gl:vertex width height 0)
+      (gl:vertex width (- height) 0)
       (gl:tex-coord 0.0 0.0)
-      (gl:vertex (- width) height 0))))
+      (gl:vertex (- width) (- height) 0))))
 
 
 
