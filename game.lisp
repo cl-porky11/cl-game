@@ -40,17 +40,13 @@ only start is external in this package
       (if (< (current-distance self other) dis)
           (boost self rot)))))
 
-#+nil
-(defun init-def (arg)
-  (reset-hold-actions)
-  (reset-press-actions)
-  (reset-release-actions)
-  (define-press-action #\r)
-  (define-press-action #\Escape
-    (dotimes (i (length glut::*id->window*))
-      (glut:destroy-window i)))
-  arg)
-
+(reset-hold-actions)
+(reset-press-actions)
+(reset-release-actions)
+(define-press-action #\r)
+(define-press-action #\Escape
+  (glut:leave-main-loop))
+  
 (defun init-cam (next)
   (let ((cam (make-instance '(camera cluster angled rotator positional mover breaker)
                             :pos (vector 0 0 -1024)
@@ -206,6 +202,9 @@ only start is external in this package
                                             :pos (vector (rand) (rand) (rand))))
                            (iota 256)))))
 
+(defun init-tex ()
+  (make-instance 'textured :image-file "lisplogo_fancy_256.png"))
+
 (defun init-window (next)
   (make-instance 'window :fps 32
                  :width 768
@@ -216,7 +215,7 @@ only start is external in this package
   (glut:display-window (funcall (apply #'compose init-funs))))
 
 (defun example ()
-  (start 'init-window 'init-planet))
+  (start 'init-window 'init-tex))
 
 #+nil
 (defmethod act progn ((ball test-ball))

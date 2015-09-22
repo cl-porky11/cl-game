@@ -65,7 +65,9 @@
            #:size
 
            #:ball
+
            #:colored
+           #:textured
 
            #:camera
            #:focusing
@@ -85,7 +87,7 @@
 (in-package #:clg-spat)
 
 ;;;etc.
-
+#+nil
 (defmacro show (&rest vars)
   `(progn (format t ,(format nil "~{~a: ~~a~^; ~}~%" vars) ,@vars)
           (list ,@vars)))
@@ -550,12 +552,14 @@ depends on the generic function #'CURRENT-VECTOR"
 
 (defmethod display ((ball ball))
   ;;  (let ((clg-gl::*circle-quality* (round (* 2 (sqrt (size ball))))))
-    (gl:with-pushed-matrix
-      (draw-circle)
-      (gl:rotate 90 1 0 0)
-      (draw-circle)
-      (gl:rotate 90 0 1 0)
-      (draw-circle)));)
+  (glut:solid-sphere 1 8 4)
+  #+nil
+  (gl:with-pushed-matrix
+    (draw-circle)
+    (gl:rotate 90 1 0 0)
+    (draw-circle)
+    (gl:rotate 90 0 1 0)
+    (draw-circle)));)
 
 (defmethod single-roll-vector v+ ((self rotator) other vector dis)
   (v* (rotation-vector (spin self) vector) dis))
@@ -586,6 +590,103 @@ depends on the generic function #'CURRENT-VECTOR"
   (gl:with-pushed-attrib (:current-bit)
     (apply #'gl:color (color colored))
     (call-next-method)))
+
+(defclass textured ()
+  (texture height width (image-file :initarg :image-file)))
+
+#+nil
+(defun load-texture (file &optional (format :luminance))
+  (let* ((texture (car (gl:gen-textures 1)))
+         (image (read-png-file file)))
+    (gl:bind-texture :texture-2d texture)
+    (gl:tex-parameter :texture-2d :texture-min-filter :linear)
+    (gl:tex-image-2d :texture-2d 0 :rgba
+                     (width image) (height image)
+                     0 format
+                     :unsigned-byte (let* ((vec (subvector (image-data image)))
+                                           (arr (make-array (/ (length vec) 4))))
+                                      (dotimes (i (length arr))
+                                        (setf (aref arr i) (aref vec (* i 4))))
+                                      arr))
+    (values texture (width image) (height image))))
+
+(defun load-texture (filename &optional (texture-id (car (gl:gen-textures 1))
+                                                    texture-id-p))
+  (flet ((load-and-decode (filename)
+           (with-open-file (in filename
+                               :element-type '(unsigned-byte 8))
+             (png:decode in))))
+    (unwind-protect
+        (let ((png (load-and-decode filename)))
+          (assert png)
+          (gl:bind-texture :texture-2d texture-id)
+          (let ((ww (png:image-width png))
+                (hh (png:image-height png))
+                (cc (png:image-channels png)))
+            (let ((data (make-array (list (* ww hh cc))
+                                    :element-type (array-element-type png)
+                                    :displaced-to png)))
+              (let ((level-of-detail 0)
+                    (internal-format (ecase cc
+                                       (1 :luminance)
+                                       (2 :luminance-alpha)
+                                       (3 :rgb)
+                                       (4 :rgba)))
+                    (border 0)
+                    (format (ecase cc
+                              (1 :luminance)
+                              (2 :luminance-alpha)
+                              (3 :rgb)
+                              (4 :rgba)))
+                    (data-type (ecase (png:image-bit-depth png)
+                                 (8  :unsigned-byte)
+                                 (16 :unsigned-short))))
+                (print (list :texture-2d
+                                 level-of-detail
+                                 internal-format
+                                 ww
+                                 hh
+                                 border
+                                 format
+                                 data-type
+                                 #+nil data))
+                (gl:tex-image-2d :texture-2d
+                                 level-of-detail
+                                 internal-format
+                                 ww
+                                 hh
+                                 border
+                                 format
+                                 data-type
+                                 data))
+              (gl:tex-parameter :texture-2d :texture-min-filter :linear)
+              (gl:tex-parameter :texture-2d :texture-mag-filter :linear))
+            (values texture-id ww hh)))
+      (unless texture-id-p
+        (gl:delete-textures (list texture-id))))))
+
+(defmethod initialize-instance :after ((textured textured) &key image-file)
+  (print image-file)
+  (with-slots (texture width height) textured
+    (multiple-value-setq (texture width height) (values nil nil nil) #+nil (load-texture image-file))))
+
+(defmethod display ((textured textured))
+  (with-slots (texture height width image-file) textured
+    (unless texture
+      (gl:enable :texture-2d)
+      (multiple-value-setq (texture width height) (load-texture image-file)))
+    (gl:bind-texture :texture-2d texture)
+    (gl:color 1 1 1)
+    (gl:with-primitive :quads
+      (gl:tex-coord 0.0 1.0)
+      (gl:vertex (- width) (- height) 0)
+      (gl:tex-coord 1.0 1.0)
+      (gl:vertex  width (- height) 0)
+      (gl:tex-coord 1.0 0.0)
+      (gl:vertex width height 0)
+      (gl:tex-coord 0.0 0.0)
+      (gl:vertex (- width) height 0))))
+
 
 
 ;;camera

@@ -55,7 +55,7 @@
 (defun vector-of (type &rest elements)
   (make-array (length elements) :element-type type :initial-contents elements))
 
-(defun subvector (vector &optional (start 0) end &aux (len (1+ (- (if end end (length vector)) start))))
+(defun subvector (vector &optional (start 0) end &aux (len  (- (if end end (array-total-size vector)) start)))
   (make-array len :element-type (array-element-type vector)
               :displaced-to vector :displaced-index-offset start))
 
