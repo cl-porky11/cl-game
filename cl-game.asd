@@ -1,8 +1,13 @@
 (asdf:defsystem #:cl-game
   :description ""
   :license "LLGPL"
-  :depends-on (#:alexandria #:cl-opengl #:cl-glut #:mixalot #:trivial-garbage #:named-readtables #:png)
+  :depends-on (#:alexandria #:cl-opengl #:cl-glut #:mixalot #:trivial-garbage #:named-readtables #:png
+                            #:inferior-shell #:usocket #:bordeaux-threads)
   :components ((:file "util")
+               (:file "encryption")
+               (:file "web/package" :depends-on ("encryption" "util"))
+               (:file "web/server" :depends-on ("web/package"))
+               (:file "web/client" :depends-on ("web/package"))
                (:file "vectors" :depends-on ("util"))
                (:file "rotate" :depends-on ("vectors"))
                (:file "opengl" :depends-on ("rotate"))

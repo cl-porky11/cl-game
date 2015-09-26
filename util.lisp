@@ -4,6 +4,8 @@
   (:export #:defaccessor
            #:with-instances
            #:mulf
+           #:read-until
+           #:write-until
            #:construct
            #:funcall-if
            #:apply-if
@@ -61,6 +63,19 @@
 (defun applying (fun)
   (lambda (arg)
     (apply fun arg)))
+
+(defun read-until (end &rest args)
+  (with-output-to-string (out)
+    (loop for char = (apply #'read-char args)
+       until (char= char end)
+       do (write-char char out))))
+
+(defun write-until (end string &optional (stream *standard-output*))
+  (with-input-from-string (in string)
+    (loop for char = (read-char in nil)
+       while (and char (char/= char end))
+       do (write-char char stream)))
+  (write-char end stream))
 
 (defmacro mapfun (args &body body)
   (let ((vars (mapcar #'car args))
