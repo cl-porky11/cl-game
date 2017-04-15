@@ -1,5 +1,5 @@
 (defpackage #:clg-talk
-  (:use #:cl #:clg-util #:sb-mop #:alexandria #:replaceable-objects)
+  (:use #:cl #:clg-util #:sb-mop #:alexandria)
   (:export #:say
 
            #:talker
